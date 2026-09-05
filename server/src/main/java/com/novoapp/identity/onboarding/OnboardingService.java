@@ -133,19 +133,7 @@ public class OnboardingService {
     }
 
     private void remember(IncomingContact contact, OnboardingState state, String token) {
-        OnboardingSession session = sessions.findOpen(contact.channel(), contact.externalId())
-                .orElseGet(() -> {
-                    OnboardingSession created = new OnboardingSession();
-                    created.channel = contact.channel();
-                    created.externalId = contact.externalId();
-                    return created;
-                });
-        session.state = state;
-        session.inviteToken = token;
-        session.updatedAt = Instant.now();
-        // Persiste so com a linha ja completa: state e NOT NULL.
-        sessions.persist(session);
-        sessions.flush();
+        sessions.save(contact.channel(), contact.externalId(), state, token);
     }
 
     private void advance(OnboardingSession session, OnboardingState state) {

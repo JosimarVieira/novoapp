@@ -204,8 +204,9 @@ faz, e que alguém encontraria usando.
 
 ## Achados do primeiro uso em produção (2026-09-05)
 
-Três coisas que nenhum teste pegou porque nenhuma delas existe fora de um deploy
-real. Ficam registradas porque são o tipo de coisa que se esquece.
+Seis coisas que nenhum teste pegou porque nenhuma delas existe fora de um deploy
+real. Ficam registradas porque são o tipo de coisa que se esquece — e três delas
+eram bugs meus, não configuração.
 
 1. **A senha do papel de runtime era gravada uma vez só, pela `V1`.** Trocar
    `NOVOAPP_DB_RUNTIME_PASSWORD` depois deixava a aplicação tentando uma senha
@@ -223,6 +224,22 @@ real. Ficam registradas porque são o tipo de coisa que se esquece.
    fechar antes de confiar demais no par.
 3. **O `secret_token` do Telegram não aceita `+`, `/` nem `=`**, que é o que o
    `base64` produz. O README ensinava a gerar assim.
+4. **A saída da Railway para a internet pública é IPv4.** O
+   `-Djava.net.preferIPv6Addresses=true` que eu tinha posto no `Dockerfile` (por
+   causa da rede privada) fazia a JVM escolher o endereço IPv6 de
+   `api.telegram.org` e falhar com `Network is unreachable` — o bot ficava mudo
+   com todo o resto funcionando. A flag nem era necessária: a rede privada dos
+   ambientes novos resolve IPv4 e IPv6.
+5. **O Telegram entrega em paralelo** (`max_connections: 40`). Mensagens que
+   ficaram na fila enquanto a aplicação estava fora chegaram juntas, e duas
+   viram ao mesmo tempo "não existe sessão de onboarding": violação de
+   unicidade em `onboarding_session`. Era o mesmo raciocínio da [ADR-0005](../01-adr/0005-idempotencia-de-mensagens-recebidas.md) que eu
+   não tinha aplicado fora de `inbound_message`. Virou upsert, com teste de
+   regressão.
+6. **O `finally` do `TenantSession` mascarava a causa real.** Ao restaurar o
+   escopo numa transação já abortada, ele lançava por cima da exceção original.
+   Agora a restauração falha em silêncio e registra em debug — o rollback
+   descarta o `SET LOCAL` de qualquer jeito.
 
 ## Decisões tomadas ao implementar
 

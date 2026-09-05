@@ -6,6 +6,7 @@ import jakarta.persistence.EntityManager;
 import jakarta.transaction.Status;
 import jakarta.transaction.TransactionManager;
 import org.hibernate.Session;
+import org.jboss.logging.Logger;
 
 import java.sql.PreparedStatement;
 import java.sql.Statement;
@@ -29,6 +30,8 @@ import java.util.concurrent.Callable;
  */
 @ApplicationScoped
 public class TenantSession {
+
+    private static final Logger LOG = Logger.getLogger(TenantSession.class);
 
     private static final ThreadLocal<Applied> APPLIED = new ThreadLocal<>();
 
@@ -62,11 +65,29 @@ public class TenantSession {
         } finally {
             if (previous == null) {
                 APPLIED.remove();
-                clearSession();
             } else {
                 APPLIED.set(previous);
+            }
+            restoreQuietly(previous);
+        }
+    }
+
+    /**
+     * Se o corpo falhou, a transacao pode ja estar abortada, e qualquer SQL nela
+     * estoura "current transaction is aborted". Insistir aqui nao adianta -- o
+     * rollback descarta o <code>SET LOCAL</code> de qualquer jeito -- e lancar
+     * de dentro do <code>finally</code> substituiria a excecao original pela
+     * desta linha, escondendo a causa real.
+     */
+    private void restoreQuietly(Applied previous) {
+        try {
+            if (previous == null) {
+                clearSession();
+            } else {
                 apply(previous.role(), previous.householdId());
             }
+        } catch (RuntimeException e) {
+            LOG.debugf(e, "Nao foi possivel restaurar o escopo de tenancy; a transacao provavelmente ja abortou");
         }
     }
 

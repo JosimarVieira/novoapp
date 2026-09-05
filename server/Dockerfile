@@ -35,6 +35,8 @@ ENV QUARKUS_PROFILE=prod
 # A porta vem de PORT, injetada pela plataforma (%prod.quarkus.http.port).
 EXPOSE 8080
 
-# A rede privada da Railway responde em IPv6; sem isto a resolucao do host do
-# Postgres falha de um jeito dificil de diagnosticar.
-ENTRYPOINT ["java", "-Djava.net.preferIPv6Addresses=true", "-jar", "quarkus-run.jar"]
+# Sem -Djava.net.preferIPv6Addresses: a rede privada da Railway resolve IPv4 e
+# IPv6 nos ambientes novos, mas a saida para a internet publica e IPv4. Preferir
+# IPv6 fazia a JVM escolher o endereco v6 de api.telegram.org e falhar com
+# "Network is unreachable" -- o bot ficava mudo com o resto do sistema OK.
+ENTRYPOINT ["java", "-jar", "quarkus-run.jar"]
