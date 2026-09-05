@@ -3,3 +3,8 @@
 legacy/
 .obsidian/
 docs/.obsidian/
+
+# build do server/
+target/
+.mvn/
+*.class

@@ -18,10 +18,18 @@ cumprido. A feature de vínculo de identidade (onboarding) está escrita
 (convite de membro, Aceita em 2026-09-05) registrando o schema e o fluxo.
 Nada documentado bloqueia mais abrir o editor pra Etapa 1.
 
-## Etapa 1 — Bot Telegram + despesa (~1 semana)
+## Etapa 1 — Bot Telegram + despesa (fechada em 2026-09-05)
 
 Webhook, adaptador de canal, `identity`, idempotência, uma tool no LLM,
 Flyway com schema mínimo já multi-tenant e RLS ativa.
+
+Entregue. O relato completo — o que foi construído, o que ficou de fora, as
+lacunas conhecidas dentro do que foi entregue, e as decisões tomadas ao
+implementar — está em
+[`docs/05-entregas/etapa-1-bot-telegram-e-despesa.md`](docs/05-entregas/etapa-1-bot-telegram-e-despesa.md).
+Uma decisão estrutural virou ADR nova ([ADR-0022](docs/01-adr/0022-papel-de-banco-pre-tenant-para-identidade.md), papel de banco pré-tenant
+para a resolução de identidade); as demais ficaram registradas nos SDDs de
+módulo.
 
 Escopo decidido em 2026-09-05, corrigindo uma imprecisão de escopo: esta
 etapa toca `channel`, `identity`, `nlu`, `conversation` e `finance` — não só
@@ -33,9 +41,20 @@ exigem `PendingAction` e a política de confiança média/baixa da ADR-0004
 inteira — ficam pra Etapa 2, junto com mercado/tarefas.
 
 **Entregável**: você manda `mercado 50` no Telegram e vê a linha no Postgres,
-com recibo no chat. Teste de vazamento de tenant verde.
+com recibo no chat. Teste de vazamento de tenant verde. — **Cumprido**, com uma
+ressalva operacional: household novo nasce sem categoria ([ADR-0013](docs/01-adr/0013-household-novo-comeca-sem-categorias.md)) e criar
+categoria por chat é Etapa 2, então as categorias da família são semeadas por
+SQL na validação (passo documentado em [`server/README.md`](server/README.md)).
 
 ## Etapa 2 — Mercado, tarefas e consultas (~2 semanas)
+
+Começa por tirar o `@Disabled` de `Etapa2AcceptanceTest`: os cenários `@etapa2`
+já estão escritos e já falham por falta de implementação, que é o estado
+correto.
+
+Além do que a etapa já previa, herda três lacunas conhecidas da Etapa 1,
+listadas na entrega dela: botão nativo de compartilhar contato, retry com
+backoff na falha de LLM, e o comando de trocar o household ativo ([ADR-0007](docs/01-adr/0007-pessoa-em-multiplos-households.md)).
 
 **Entregável**: os seis fluxos do glossário funcionando por chat, incluindo
 "o que está faltando?".

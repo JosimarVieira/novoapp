@@ -1,0 +1,53 @@
+filters:
+  and:
+    - tipo == "entrega"
+properties:
+  etapa:
+    displayName: Etapa
+  status:
+    displayName: Status
+  data:
+    displayName: Data
+  modulos:
+    displayName: Módulos tocados
+  adrs:
+    displayName: ADRs aplicadas
+  file.name:
+    displayName: Entrega
+views:
+  - type: table
+    name: Todas
+    order:
+      - etapa
+      - file.name
+      - status
+      - data
+      - modulos
+    sort:
+      - property: etapa
+        direction: ASC
+    columnSize:
+      file.name: 380
+      note.status: 110
+      note.data: 130
+  - type: table
+    name: Por módulo tocado
+    groupBy:
+      property: modulos
+      direction: ASC
+    order:
+      - etapa
+      - file.name
+      - data
+    sort:
+      - property: etapa
+        direction: ASC
+  - type: table
+    name: Rastro para ADR
+    order:
+      - etapa
+      - file.name
+      - adrs
+    sort:
+      - property: etapa
+        direction: ASC
