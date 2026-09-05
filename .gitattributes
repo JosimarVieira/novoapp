@@ -1,0 +1,10 @@
+# Normaliza para LF no repositório, independente do editor usado no Windows.
+# Sem isso, salvar um arquivo com CRLF reescreve todas as linhas dele no diff
+# e destrói o git blame.
+* text=auto eol=lf
+
+# Binários: nunca converter.
+*.png binary
+*.jpg binary
+*.pdf binary
+*.jar binary
