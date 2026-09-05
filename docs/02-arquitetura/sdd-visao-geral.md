@@ -9,6 +9,7 @@ adrs:
   - ADR-0018
   - ADR-0020
   - ADR-0021
+  - ADR-0022
 ---
 
 # SDD — Visão geral
@@ -30,6 +31,12 @@ mesmas ações por interface web.
 | `shopping` | Lista, itens, fechamento de compra | Cria lançamento **através** de `finance`, nunca escrevendo em `transaction`. |
 | `tasks` | Tarefas | — |
 
+Fora da tabela, porque não é módulo de domínio: `common/tenancy` aplica o
+isolamento multi-tenant na conexão ([ADR-0022](../01-adr/0022-papel-de-banco-pre-tenant-para-identidade.md),
+[`sdd-modulo-tenancy.md`](sdd-modulo-tenancy.md)). Todo módulo depende dele; ele não depende de
+nenhum. `common/message` guarda o `InboundMessage` normalizado — o tipo que
+atravessa a fronteira de `channel` sem carregar de qual canal veio.
+
 ## Regra de dependência
 
 ```
@@ -41,7 +48,9 @@ finance / shopping / tasks  ->  identity
 ```
 
 `finance`, `shopping` e `tasks` **não podem** importar `channel` nem `nlu`.
-Barrado por teste ArchUnit, não por revisão de código.
+Barrado por teste ArchUnit, não por revisão de código — onze regras em
+`ModuleBoundariesTest`, incluindo ausência de ciclos entre os módulos e a regra
+não negociável 5 (nenhum tipo com nome de provedor fora de `channel`).
 
 `shopping` pode depender de `finance` (o elo é dirigido nesse sentido).
 `finance` não pode depender de `shopping`.

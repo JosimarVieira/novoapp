@@ -15,6 +15,7 @@ adrs:
   - ADR-0019
   - ADR-0020
   - ADR-0021
+  - ADR-0022
 ---
 
 # Modelo de dados
@@ -25,6 +26,13 @@ a Etapa 5 provar que o domínio é usado.
 Regra que atravessa tudo: **`household_id NOT NULL` em toda tabela abaixo de
 `household`**, com RLS ativa ([ADR-0003](../01-adr/0003-isolamento-multi-tenant-por-household.md)). Exceção deliberada: `member` não tem
 `household_id` — é identidade de pessoa, não dado de household ([ADR-0007](../01-adr/0007-pessoa-em-multiplos-households.md)).
+
+As tabelas de identidade (`channel_identity`, `household_invite`,
+`onboarding_session`, e as leituras pré-tenant de `household`, `member` e
+`household_membership`) são lidas **antes** de existir tenant — descobrir o
+tenant é o trabalho delas. Vivem sob um papel de banco próprio, e o papel de
+domínio não recebe privilégio nenhum sobre as três primeiras
+([ADR-0022](../01-adr/0022-papel-de-banco-pre-tenant-para-identidade.md)).
 
 ## Diagrama (visão geral)
 
@@ -248,10 +256,25 @@ household_invite
   id, household_id, invited_by_member_id,
   phone_number,                     -- E.164, alvo do convite
   token UK,
-  status (PENDING|ACCEPTED|EXPIRED), -- calculado sob demanda a partir de expires_at, sem job (mesmo padrao do ADR-0014)
+  status (PENDING|ACCEPTED),         -- só estes dois são gravados; EXPIRED é calculado sob demanda a partir de expires_at, sem job (mesmo padrao do ADR-0014)
   created_at, expires_at,            -- expires_at = created_at + 7 dias
   accepted_at, accepted_by_member_id (nullable)
+
+onboarding_session                   -- onde a conversa de onboarding parou
+  id, channel, external_id,
+  state,                             -- AWAITING_CREATE_CONFIRMATION | AWAITING_HOUSEHOLD_NAME
+                                     -- | AWAITING_SETUP_CHANNEL_CHOICE | AWAITING_SHARED_CONTACT
+  invite_token (nullable),
+  created_at, updated_at
+  UNIQUE (channel, external_id)
 ```
+
+`onboarding_session` entrou em 2026-09-05, ao implementar a Etapa 1. O
+onboarding tem mais de um passo ("quer criar?" → "qual o nome?"), e quem está no
+meio dele ainda não tem `channel_identity` nem household — logo não cabe em
+`pending_action`, que exige os dois `NOT NULL`. Some assim que o vínculo existe.
+Sem ADR própria: é estrutura de suporte a um fluxo que a [ADR-0020](../01-adr/0020-convite-de-membro.md) já decidiu.
+Registrada em `sdd-modulo-identity.md`.
 
 Convite é específico do telefone convidado, não da pessoa que clica o link
 -- só é aceito se o telefone compartilhado bater com `phone_number`. Entrar
@@ -422,3 +445,20 @@ só entra depois que a Etapa 5 mostrar que tarefas são usadas de verdade.
 - `transaction_edit (transaction_id, edited_at)` — mostrar historico de correcao de um lancamento, [ADR-0012](../01-adr/0012-edicao-de-lancamento-entre-membros.md)
 - `household_invite (token)` — unicidade e resolucao do convite pelo link, [ADR-0020](../01-adr/0020-convite-de-membro.md)
 - `household_invite (phone_number, status)` — achar convite pendente ao receber contato compartilhado, [ADR-0020](../01-adr/0020-convite-de-membro.md)
+- `onboarding_session (channel, external_id)` — unicidade e retomada da conversa de onboarding
+
+## O que existe no banco hoje
+
+A Etapa 1 criou, em `server/src/main/resources/db/migration/V1__initial_schema.sql`:
+`household`, `member`, `household_membership`, `channel_identity`,
+`household_invite`, `onboarding_session`, `inbound_message`, `account`,
+`category`, `transaction` — todas com RLS ativa e `FORCE`, exceto `member`
+([ADR-0007](../01-adr/0007-pessoa-em-multiplos-households.md): não tem `household_id` em que uma policy possa se apoiar).
+
+As demais tabelas deste documento — `pending_action`, `invoice`,
+`transaction_edit`, `financial_goal`, `goal_transaction_link`, `shopping_list`,
+`list_item`, `list_checkout`, `task` — estão modeladas aqui e **não existem no
+schema**: entram na etapa que precisar delas. O schema da Etapa 1 foi desenhado
+para não conflitar com nenhuma (`transaction` já carrega `invoice_id`,
+`installment_*` e `split_group_id` sem uso, justamente para que a fatura não
+exija alterar a tabela depois).

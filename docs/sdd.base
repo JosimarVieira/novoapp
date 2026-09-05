@@ -24,7 +24,6 @@ views:
     sort:
       - property: file.name
         direction: ASC
-
   - type: table
     name: SDD sem lastro
     filters:
@@ -38,7 +37,6 @@ views:
     sort:
       - property: file.name
         direction: ASC
-
   - type: table
     name: Modelagem e visão geral
     filters:

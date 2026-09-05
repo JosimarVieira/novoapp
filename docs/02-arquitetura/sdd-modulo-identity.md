@@ -9,6 +9,7 @@ adrs:
   - ADR-0011
   - ADR-0020
   - ADR-0021
+  - ADR-0022
 ---
 
 # SDD — Módulo `identity`
@@ -42,8 +43,9 @@ tabelas (`household`, `member`, `household_membership`, `channel_identity`,
   passam por LLM nem por política de confiança: é árvore de decisão fixa,
   sem interpretação nenhuma envolvida.
 - Não seta a sessão de RLS (`SET LOCAL app.household_id`) — só resolve o
-  dado. Quem aplica isso é a camada de interceptor, que ainda não tem SDD
-  próprio (fica pra quando o interceptor for escrito).
+  dado. Quem aplica isso é o pacote técnico `common/tenancy`
+  ([`sdd-modulo-tenancy.md`](sdd-modulo-tenancy.md), [ADR-0022](../01-adr/0022-papel-de-banco-pre-tenant-para-identidade.md)) — decidido em 2026-09-05,
+  ao escrever a Etapa 1; esta seção dizia "ainda não tem SDD próprio".
 
 ## Depende de
 
@@ -188,12 +190,53 @@ escreve em tabela de `finance`.
   teste que trava exatamente o furo corrigido nesta versão (ver "Fluxo:
   autenticação web" acima).
 
+## Decisões tomadas ao implementar a Etapa 1 (2026-09-05)
+
+Três coisas que este SDD deixava em aberto ou desenhava de um jeito que a
+implementação mostrou não fechar. Ficam registradas aqui, e não só no código,
+pelo mesmo motivo da decisão sobre a `account` WALLET acima.
+
+**1. `resolveContext` recebe a mensagem inteira, não só `(canal, external_id)`.**
+O `sdd-modulo-channel.md` desenhou `resolveContext(channel, externalId)`. Não
+fecha: o token de convite chega dentro do texto (`/start <token>`, [ADR-0020](../01-adr/0020-convite-de-membro.md)) e
+o telefone chega no contato compartilhado. Com só o par, `identity` não teria
+como saber que a mensagem é um aceite de convite, e essa decisão vazaria pra
+`channel` — que, por regra, não decide nada. A assinatura passou a receber um
+`IncomingContact(canal, externalId, nomeDeQuemFalou, texto, telefoneCompartilhado)`.
+É o que faz funcionar o cenário "Convite já aceito não pode ser aceito de novo",
+em que a pessoa **já tem** `channel_identity` e ainda assim precisa cair no
+fluxo de convite.
+
+**2. `OutboundMessagePort` endereça por `(canal, external_id)`, não por
+`ChannelIdentity`.** A assinatura desenhada aqui era
+`send(ChannelIdentity destino, String texto)`. Durante o onboarding não existe
+`ChannelIdentity` — criar uma é o desfecho do fluxo, não o começo dele. O porto
+passou a ser `send(Channel canal, String externalId, String texto)`.
+
+**3. Tabela `onboarding_session`.** O onboarding é uma árvore de mais de um
+passo ("quer criar?" → "qual o nome?"), e quem está no meio dela ainda não tem
+`channel_identity` nem household — logo não cabe em `pending_action`, que exige
+os dois `NOT NULL`, e que de todo modo é Etapa 2 ([ADR-0018](../01-adr/0018-central-de-pendencias.md)). A tabela guarda
+`(canal, external_id) → estado, token do convite`, vive sob o papel pré-tenant e
+some assim que o vínculo existe. Sem ADR própria: é estrutura de suporte a um
+fluxo que a [ADR-0020](../01-adr/0020-convite-de-membro.md) já decidiu, não decisão nova de produto.
+
+Uma quarta coisa que **não** foi implementada: a emissão do convite pelo OWNER
+(`convidar Bruno, +55...`). O comando parte de número já vinculado, então
+atravessa o pipeline de interpretação, e o `nlu` da Etapa 1 só declara a tool
+`registrarDespesa`. O cenário virou `@etapa2` no `.feature`. Todo o lado do
+aceite está implementado.
+
 ## Gatilhos de revisão
 
 - Etapa 7 (WhatsApp): `resolveContext` ganha um segundo `channel` possível;
   nada na lógica de onboarding muda, só a origem do `external_id`.
-- Quando o interceptor de RLS for escrito, decidir explicitamente se ele
-  vive dentro de `identity` ou é módulo técnico à parte — não decidido aqui.
+- ~~Quando o interceptor de RLS for escrito, decidir explicitamente se ele
+  vive dentro de `identity` ou é módulo técnico à parte~~ — decidido em
+  2026-09-05: pacote técnico à parte, [ADR-0022](../01-adr/0022-papel-de-banco-pre-tenant-para-identidade.md) e [`sdd-modulo-tenancy.md`](sdd-modulo-tenancy.md).
+- Etapa 2, ao entrar `PendingAction`: reavaliar se `onboarding_session` continua
+  tabela própria ou se as duas convergem. Hoje não convergem — os campos
+  obrigatórios de uma são justamente o que a outra não tem.
 - Antes da Etapa 6: verificação de posse do e-mail e recuperação de senha
   (negativas da ADR-0021, DECISOES-ABERTAS item 21) — sem isso, `cadastrar`
   fica sem caminho de recuperação pra quem nunca usou chat.

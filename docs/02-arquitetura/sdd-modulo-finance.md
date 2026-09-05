@@ -20,8 +20,18 @@ camada de serviço, regra 4 do CLAUDE.md).
 ## Escopo desta versão (Etapa 1)
 
 Um único caso de uso: `registrarDespesa(householdId, memberId, categoryId,
-amountCents)`. Sem conta explícita no parâmetro nesta versão — resolve
-sozinho, na ordem:
+amountCents, sourceMessageId)`.
+
+Duas correções de 2026-09-05, ao implementar. **`sourceMessageId` entrou na
+assinatura**: o fluxo abaixo já exigia `source_message_id` gravado — é o que
+torna a Etapa 5 mensurável —, mas a assinatura desenhada aqui não tinha por onde
+recebê-lo. **O nome do método em código é `registerExpense`**, não
+`registrarDespesa`: identificador em inglês é regra sem exceção no CLAUDE.md, e
+o português fica no Gherkin, na ADR e no comentário. O nome `registrarDespesa`
+continua valendo onde ele de fato é português — a *tool* declarada ao LLM
+([ADR-0004](../01-adr/0004-interpretacao-por-function-calling-com-politica-de-confianca.md)), que é dado enviado ao modelo, não identificador.
+
+Sem conta explícita no parâmetro nesta versão — resolve sozinho, na ordem:
 
 1. `household_membership.default_account_id` do member, se preenchido
    ([ADR-0019](../01-adr/0019-conta-padrao-por-membro.md));
@@ -76,6 +86,10 @@ converte em recibo de erro no chat (nunca silêncio).
   `shopping`, `tasks` — só `identity`.
 - Cenários `@etapa1` de `financas-lancamento-por-chat.feature`, mais o
   teste de vazamento de tenant que o próprio ROADMAP da Etapa 1 exige.
+- O teste de vazamento cobre três formas de errar, não uma: ler o household
+  errado, usar categoria de outro household, e passar um `householdId` diferente
+  do que está no contexto resolvido — este último é recusado pelo `WITH CHECK`
+  da policy, não por validação em Java.
 
 ## Gatilhos de revisão
 
