@@ -7,23 +7,26 @@ o que se define antes é **o que se testa, onde, e o que barra um merge**.
 
 | Camada | Ferramenta | O que cobre | Alvo |
 |---|---|---|---|
-| Unidade | JUnit 5 + AssertJ | Regra de domínio pura: cálculo, transição de status, validação | Rápido, sem Spring context |
-| Arquitetura | ArchUnit | Regra de dependência entre módulos (ADR-0001) | Falha o build |
+| Unidade | JUnit 5 + AssertJ | Regra de domínio pura: cálculo, transição de status, validação | Rápido, sem contexto CDI/Quarkus |
+| Arquitetura | ArchUnit | Regra de dependência entre módulos ([ADR-0001](../01-adr/0001-monolito-modular-em-quarkus.md)); nenhum código abaixo de `channel/` referencia tipo específico de canal (regra não negociável 5 do CLAUDE.md) | Falha o build |
 | Integração | Testcontainers (Postgres real) | Repositório, transacionalidade, **RLS** | Nunca com H2 |
 | Aceitação | Cucumber JVM sobre os `.feature` | Comportamento observável ponta a ponta | Fonte de verdade |
-| Contrato de canal | WireMock | Webhook de Telegram/Meta, incluindo reentrega e timeout | — |
+| Contrato de canal | WireMock | Webhook de Telegram/Meta, incluindo reentrega, timeout e orçamento de resposta (<3s) | — |
 
 ## O que é obrigatório
 
-Três testes que não podem faltar, porque cobrem as regras não negociáveis:
+Quatro testes que não podem faltar, porque cobrem as regras não negociáveis:
 
 1. **Vazamento de tenant** — suite que executa operações de dois households
    simultaneamente e falha se qualquer query retornar dado do outro. Roda em
    todo build. É o teste mais importante do projeto.
 2. **Idempotência** — entregar o mesmo `provider_message_id` duas vezes produz
-   exatamente um efeito. Cobre ADR-0005.
+   exatamente um efeito. Cobre [ADR-0005](../01-adr/0005-idempotencia-de-mensagens-recebidas.md).
 3. **Atomicidade do fechamento de compra** — falha em `finance` deixa a lista
    intacta. Cobre o diferencial do produto.
+4. **Orçamento de resposta do webhook** — persistência da `InboundMessage` e
+   resposta 200 ficam sob 3s mesmo com interpretação e execução acontecendo
+   fora do ciclo de request. Cobre a regra não negociável 3 do CLAUDE.md.
 
 ## O que não testamos
 

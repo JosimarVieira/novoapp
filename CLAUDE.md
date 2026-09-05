@@ -7,6 +7,10 @@ Contexto permanente do projeto. Leia antes de qualquer tarefa.
 Aplicativo familiar com três domínios — finanças, lista de mercado, tarefas/agenda —
 operável por chat (Telegram e, depois, WhatsApp) além da interface web.
 
+Interação por chat é sempre 1:1: cada membro cadastra o próprio número e
+conversa com o bot em fio dedicado. Nunca grupo, mesmo onde o canal suportar
+— decisão de produto, não limitação técnica. Ver ADR-0008.
+
 O usuário manda `mercado 50` no chat e a despesa é registrada, categorizada,
 sem abrir o app. Manda `acabou o arroz` e o item entra na lista da família.
 
@@ -19,19 +23,16 @@ Toda decisão de priorização deve favorecer esse elo.
 **Modelo de negócio**: SaaS por household (nunca por usuário — ver ADR-0006).
 Validação inicial na família do fundador antes de qualquer cliente externo.
 
-**Identificação**
-o nome da aplicação ainda está em aberto, por enquanto em nivel de construção trataremos como novoapp.
-
 ## Stack
 
-| Camada   | Escolha                                                  |
-| -------- | -------------------------------------------------------- |
-| Backend  | Java 21 + Spring Boot 3, monolito modular                |
-| Banco    | PostgreSQL, migrations via Flyway                        |
-| ORM      | JPA/Hibernate                                            |
-| Frontend | Vue 3 + Vite, entregue como PWA (sem app nativo)         |
-| LLM      | function calling via LangChain4j ou Spring AI            |
-| Canais   | Telegram Bot API (primeiro), WhatsApp Cloud API (depois) |
+| Camada   | Escolha                                                                                      |
+| -------- | -------------------------------------------------------------------------------------------- |
+| Backend  | Java 21 + Quarkus, monolito modular (ADR-0001)                                               |
+| Banco    | PostgreSQL, migrations via Flyway                                                            |
+| ORM      | JPA/Hibernate                                                                                |
+| Frontend | Vue 3 + Vite, entregue como PWA (sem app nativo)                                             |
+| LLM      | function calling via LangChain4j (extensão quarkus-langchain4j) — provedor na validação: Mistral AI (ADR-0009) |
+| Canais   | Telegram Bot API (primeiro), WhatsApp Cloud API (depois)                                     |
 
 ## Regras não negociáveis
 
@@ -39,7 +40,10 @@ Estas não são preferências. Quebrar qualquer uma é bug de severidade máxima
 
 1. **`household_id` em toda tabela de dado de usuário.** Isolamento aplicado por
    mecanismo automático (filtro Hibernate por interceptor ou RLS no Postgres),
-   nunca por disciplina de quem escreve a query. Ver ADR-0003.
+   nunca por disciplina de quem escreve a query. Ver ADR-0003. Exceção
+   deliberada: `member` não tem `household_id` — é identidade de pessoa, não
+   dado de household; o isolamento dela vive em `household_membership`. Ver
+   ADR-0007.
 2. **Idempotência por `provider_message_id`** em toda mensagem recebida.
    Telegram e Meta reenviam em timeout. Reentrega virando despesa duplicada
    destrói a confiança do usuário de forma irrecuperável. Ver ADR-0005.
@@ -58,7 +62,8 @@ Estas não são preferências. Quebrar qualquer uma é bug de severidade máxima
 Webhook  ->  Adaptador de canal  ->  InboundMessage (normalizado)
                                           |
                               Resolução de contexto
-                    (channel_identity -> member -> household,
+                    (channel_identity -> member -> household ativo,
+                     via household_membership, ADR-0007;
                      + categorias e listas reais da família)
                                           |
                                     Interpretação
@@ -104,6 +109,19 @@ checar contra as ADRs aceitas. Não modifique nada dentro de `legacy/`.
 - **Decisão estrutural vira ADR antes de virar código.** Se a implementação
   contradiz uma ADR aceita, escreva uma nova ADR que supera a anterior —
   não edite a antiga.
+- **Superar e corrigir são coisas diferentes.** *Superar* é para decisão que
+  mudou: ADR nova, a anterior vira `status: superada` com `superada_por`
+  preenchido, o conteúdo dela fica intacto como registro histórico.
+  *Corrigir* é para registro que nunca foi verdade — edita-se no próprio
+  documento, com nota de correção datada no topo e `corrigida_em` no
+  frontmatter, sem ADR de superação. Superar registro errado canoniza a
+  ficção; corrigir decisão real apaga a história.
+- **Decisão que a IA redigiu sem eu ter decidido é erro de registro, não
+  decisão.** Ao corrigir, ela sai do documento — não vira alternativa
+  descartada com deliberação inventada, nem "falha de processo". Se a ADR
+  precisa dessa alternativa para ficar honesta, escreva o motivo real da
+  recusa, sem arqueologia. Precedente: ADR-0001 (Spring Boot → Quarkus,
+  corrigida em 2026-09-05).
 - **Comportamento vira `.feature` antes de virar código.** O Gherkin é a fonte
   de verdade; o teste de aceitação implementa o Gherkin, não o contrário.
 - **Dúvida que não é decisão vai para `DECISOES-ABERTAS.md`.** Não invente
@@ -113,6 +131,11 @@ checar contra as ADRs aceitas. Não modifique nada dentro de `legacy/`.
 
 - Documentação e Gherkin em **português**. Código, nomes de classe, tabelas e
   colunas em **inglês**.
+- **Comentário de código em português.** Identificador (classe, método,
+  variável, tabela, coluna) é sempre em inglês, sem exceção — nome é
+  contrato, não é onde se explica o porquê. Comentário existe pra explicar
+  a decisão ou a regra de negócio por trás do código, em português, do
+  mesmo jeito que ADR e Gherkin.
 - ADR: `docs/01-adr/NNNN-titulo-em-kebab-case.md`, numeração sequencial, nunca
   reutilizada.
 - Termos de domínio seguem `docs/00-produto/glossario.md`. Se um termo não

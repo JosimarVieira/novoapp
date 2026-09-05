@@ -66,3 +66,9 @@ Funcionalidade: Fechamento de compra gerando lançamento
     Dado que não existe lista de compras ativa no household "Silva"
     Quando "Bruno" envia "comprei tudo, 180"
     Então "Bruno" recebe uma pergunta oferecendo registrar apenas a despesa
+
+  Cenário: Reentrega da mesma mensagem pelo provedor
+    Quando o provedor entrega duas vezes a mesma mensagem "comprei tudo, 180" de "Bruno"
+    Então os itens "Arroz", "Leite" e "Café" ficam com status comprado uma única vez
+    E exatamente uma despesa de R$ 180,00 é registrada
+    E "Bruno" recebe exatamente um recibo

@@ -1,0 +1,77 @@
+filters:
+  and:
+    - tipo == "adr"
+    - file.name != "TEMPLATE"
+properties:
+  numero:
+    displayName: "#"
+  status:
+    displayName: Status
+  data:
+    displayName: Data
+  modulos:
+    displayName: Módulos
+  depende_de:
+    displayName: Depende de
+  supera:
+    displayName: Supera
+  superada_por:
+    displayName: Superada por
+  corrigida_em:
+    displayName: Corrigida em
+  file.name:
+    displayName: ADR
+views:
+  - type: table
+    name: Todas
+    order:
+      - numero
+      - file.name
+      - status
+      - data
+      - modulos
+      - depende_de
+    columnSize:
+      file.name: 432
+      note.status: 110
+      note.data: 155
+      note.modulos: 398
+  - type: table
+    name: Por status
+    groupBy:
+      property: status
+      direction: ASC
+    order:
+      - numero
+      - file.name
+      - data
+      - modulos
+  - type: table
+    name: Vigentes
+    filters:
+      and:
+        - status == "aceita"
+    order:
+      - numero
+      - file.name
+      - modulos
+      - depende_de
+  - type: table
+    name: Em aberto
+    filters:
+      and:
+        - status == "proposta"
+    order:
+      - numero
+      - file.name
+      - data
+      - modulos
+  - type: table
+    name: Superadas
+    filters:
+      and:
+        - status == "superada"
+    order:
+      - numero
+      - file.name
+      - superada_por

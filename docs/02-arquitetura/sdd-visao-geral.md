@@ -1,3 +1,16 @@
+---
+tipo: sdd
+modulo: geral
+status: escrito
+atualizado_em: 2026-09-05
+adrs:
+  - ADR-0005
+  - ADR-0007
+  - ADR-0018
+  - ADR-0020
+  - ADR-0021
+---
+
 # SDD — Visão geral
 
 ## Responsabilidade
@@ -10,8 +23,8 @@ mesmas ações por interface web.
 | Módulo | Faz | Não faz |
 |---|---|---|
 | `channel` | Recebe webhook, normaliza para `InboundMessage`, persiste com idempotência, envia resposta pelo canal de origem | Não interpreta. Não conhece domínio. |
-| `identity` | Resolve `ChannelIdentity` → `Member` → `Household`. Define o contexto de tenant. | Não autentica web (isso é `auth`, fora do escopo até Etapa 6). |
-| `nlu` | Monta contexto do household, chama LLM com tools, devolve `Intent` + confiança | Não executa nada. Não persiste dado de domínio. |
+| `identity` | Resolve `ChannelIdentity` → `Member` → household ativo, via `HouseholdMembership` ([ADR-0007](../01-adr/0007-pessoa-em-multiplos-households.md)). Define o contexto de tenant. Cria household self-service e resolve convite ([ADR-0020](../01-adr/0020-convite-de-membro.md)) quando a identidade não resolve. Autentica sessão web por e-mail e senha, canal `WEB` ([ADR-0021](../01-adr/0021-autenticacao-web.md)). Expõe `OutboundMessagePort` (interface), implementado por `channel`. | Não verifica posse do e-mail nem recupera senha (negativas em aberto da ADR-0021, resolver antes da Etapa 6). Não formata recibo de domínio (isso é `conversation`). |
+| `nlu` | Monta contexto do household (lê categoria de `finance`), chama LLM com tools, devolve `Intent` + confiança | Não executa nada. Não persiste dado de domínio — nem em `finance`, que só lê. |
 | `conversation` | Política de confiança, `PendingAction`, curto-circuito de confirmação, formatação de recibo | Não decide regra de negócio de domínio. |
 | `finance` | Lançamentos, categorias, contas, estorno | Não fala com canal. |
 | `shopping` | Lista, itens, fechamento de compra | Cria lançamento **através** de `finance`, nunca escrevendo em `transaction`. |
@@ -20,10 +33,11 @@ mesmas ações por interface web.
 ## Regra de dependência
 
 ```
-channel  ->  conversation  ->  nlu
-                  |
-                  v
-   finance / shopping / tasks   ->  identity
+channel        ->  identity
+channel        ->  conversation  ->  nlu
+conversation   ->  identity
+nlu            ->  finance          -- so leitura de categoria, nunca escrita
+finance / shopping / tasks  ->  identity
 ```
 
 `finance`, `shopping` e `tasks` **não podem** importar `channel` nem `nlu`.
@@ -31,6 +45,20 @@ Barrado por teste ArchUnit, não por revisão de código.
 
 `shopping` pode depender de `finance` (o elo é dirigido nesse sentido).
 `finance` não pode depender de `shopping`.
+
+`channel` depende de `identity` por dois motivos: resolver o contexto de
+tenant logo após normalizar a mensagem (regra 5 do CLAUDE.md — nada abaixo
+de `channel` sabe de qual canal veio, mas `channel` mesmo precisa saber
+"de quem" antes de repassar), e disparar o onboarding determinístico
+([ADR-0020](../01-adr/0020-convite-de-membro.md)) quando a identidade não resolve. `conversation` também depende
+de `identity` — precisa do `OutboundMessagePort` (ver `sdd-modulo-identity.md`)
+pra enviar recibo e perguntas, e do nome do membro/household pra formatar
+texto. Nenhuma dessas arestas estava desenhada aqui antes — ficaram implícitas até
+a Etapa 1 forçar a decisão, uma de cada vez, à medida que cada SDD de
+módulo foi escrito (`sdd-modulo-channel.md`, `sdd-modulo-identity.md`,
+`sdd-modulo-nlu.md`). `nlu` depende de `finance` só pra montar o enum de
+categorias da tool de function calling — nunca escreve em tabela de
+`finance`.
 
 ## Fluxo de referência: fechamento de compra
 
@@ -59,11 +87,11 @@ Caminho de erro em cada passo:
 | Falha | Comportamento |
 |---|---|
 | LLM indisponível ou timeout | Mensagem fica `RECEIVED`, retry com backoff, e aviso no chat após a segunda falha. Nunca adivinhar. |
-| Reentrega de webhook | Descarte silencioso (ADR-0005) |
-| Identidade desconhecida | Responde convite de vínculo. Não cria household automaticamente. |
-| `PendingAction` expirada | Responde que expirou e repete a pergunta original |
+| Reentrega de webhook | Descarte silencioso ([ADR-0005](../01-adr/0005-idempotencia-de-mensagens-recebidas.md)) |
+| Identidade desconhecida | Sem convite pendente pro telefone → oferece criar household nova, só cria após confirmação explícita. Com convite pendente pro telefone → pede compartilhar contato pra aceitar. Nunca cria household nem aceita convite sem confirmação do usuário. Fluxo determinístico, sem LLM — ver [ADR-0020](../01-adr/0020-convite-de-membro.md) e `vinculo-de-identidade.feature`. |
+| `PendingAction` expirada no chat | Não é descartada: informa que expirou no chat e repete a pergunta ali; a mesma pendência também passa a aparecer na central de pendências do app (Etapa 4), com notificação, até ser resolvida — [ADR-0018](../01-adr/0018-central-de-pendencias.md) |
 | Erro após 200 do webhook | Recibo de erro no chat. O usuário nunca fica sem resposta. |
 
 ## Pontos em aberto
 
-Ver `docs/DECISOES-ABERTAS.md`.
+Ver [`docs/DECISOES-ABERTAS.md`](../DECISOES-ABERTAS.md).

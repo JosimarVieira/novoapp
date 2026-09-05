@@ -7,28 +7,32 @@ Ordenado por custo de errar.
 
 ## Bloqueiam a Etapa 6-7 (comercial)
 
-| # | Questão | Por que ainda não decidida | Quando decidir |
-|---|---|---|---|
-| 2 | Preço e mecânica atual de template da Meta | Muda com frequência; qualquer número de hoje envelhece | Antes de definir mensalidade |
-| 3 | Modelo de LLM e provedor | Depende do custo por mensagem medido em uso real | Etapa 5 |
-| 4 | Retenção de `inbound_message` | Escopo LGPD; depende do que a Etapa 5 mostrar ser necessário para calibração | Antes do primeiro cliente externo |
-| 5 | Base legal LGPD e fluxo de exclusão de conta | — | Etapa 6, antes de qualquer cliente |
+| #   | Questão                                      | Por que ainda não decidida                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Quando decidir                                                             |
+| --- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| 2   | Preço e mecânica atual de template da Meta   | Não confirmada em fonte primária (checado developers.facebook.com/docs/whatsapp/pricing em 2026-08-31: hoje ainda descreve conversas de serviço como gratuitas desde nov/2024, sem data de fim; só menciona "local billing" em BRL/INR "lançando em 2026", sem data exata nem valor). Fontes secundárias de mercado (blogs, não Meta) apontam fim da janela gratuita em 1º/10/2026, ≈ R$ 0,035/mensagem, exceto na janela de 72h de anúncio "Click to WhatsApp" — tratado como hipótese de trabalho em [ADR-0002](01-adr/0002-telegram-primeiro-whatsapp-depois.md) e [ADR-0006](01-adr/0006-assinatura-por-household-e-canal-proativo.md), não como fato. Falta confirmação oficial e o valor definitivo por país, previsto para 1º/09/2026 | Antes de definir mensalidade — revisar de novo após a tabela de 1º/09/2026 |
+| 3   | Modelo de LLM e provedor **comercial**       | Validação (Etapas 1-5) resolvida com Mistral AI, tier gratuito ([ADR-0009](01-adr/0009-mistral-ai-como-provedor-de-llm-na-validacao.md)). Escolha para uso comercial pago segue dependendo de taxa de acerto e custo por mensagem medidos em uso real — inclusive a opção de continuar com Mistral                                                                                                                                                                                                       | Etapa 5                                                                    |
+| 4   | Retenção de `inbound_message`                | Escopo LGPD; depende do que a Etapa 5 mostrar ser necessário para calibração                                                                                                                                                                                                                                                                                                                                                                                                                             | Antes do primeiro cliente externo                                          |
+| 5   | Base legal LGPD e fluxo de exclusão de conta | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Etapa 6, antes de qualquer cliente                                         |
+| 16  | WhatsApp disponível só em planos pagos?      | Direção provável (2026-08-31): validação em família fica só no Telegram ([ADR-0002](01-adr/0002-telegram-primeiro-whatsapp-depois.md)); ao publicar, WhatsApp provavelmente vira feature de plano pago, não do plano gratuito. Ainda não é decisão — falta o valor de cobrança da Meta (item 2) e o próprio desenho de níveis de plano, que a [ADR-0006](01-adr/0006-assinatura-por-household-e-canal-proativo.md) não define (ela só decide "cobrar por household", sem tiers).                         | Etapa 6, ao desenhar billing e planos                                      |
+
+## Bloqueiam a Etapa 4 (PWA)
+
+| #  | Questão | Nota |
+|---|---|---|
+| 21 | Autenticação web e criação de conta 100% pelo app, sem chat | Nunca foi decidida — nem a parte mínima (login de um membro que já existe, criado por chat, pra acessar a Etapa 4 — "correção de lançamento"), nem a parte que o autor levantou em 2026-09-05: gente que vai ignorar completamente a integração por chat precisa também criar a família e o próprio membro só pelo app. A segunda parte não é redesenho de backend — `identity` já expõe os fluxos de criação de household/membro como serviço reaproveitável (regra 4 do CLAUDE.md: bot e REST consomem a mesma camada de domínio), então é essencialmente um REST novo em cima do que já existe. O que falta decidir de verdade é o mecanismo de verificação pra quem nunca abriu o Telegram — `member.phone_number` sozinho não resolve, porque prova de posse do telefone (OTP) tem custo por SMS, enquanto e-mail com link mágico é grátis mas exige campo novo (`member.email`, hoje inexistente no modelo). Não bloqueia a Etapa 1 (só chat) nem a Etapa 2-3 — bloqueia abrir a Etapa 4. Coberta por [ADR-0021](01-adr/0021-autenticacao-web.md) (Aceita em 2026-09-05) — usuário e senha, e-mail como identificador, sessão por cookie. Duas negativas da própria ADR continuam em aberto, sem ADR própria ainda: verificação de posse do e-mail e recuperação de senha pra quem só usa o app (gatilho de revisão da própria ADR-0021: resolver antes da Etapa 6). |
 
 ## Bloqueiam decisões de produto
 
 | # | Questão | Nota |
 |---|---|---|
-| 7 | Limiar de confiança entre executar e perguntar | Inventar número agora é chute. Sai da Etapa 5 com dado. |
-| 8 | TTL de `PendingAction` | Sugerido 10 min, sem base. Calibrar na Etapa 5. |
-| 9 | Membro pode editar lançamento de outro membro? | Envolve confiança dentro da família. Provavelmente sim com rastro de quem editou, mas precisa de opinião. |
-| 10 | Contas (`account`) entram na Etapa 1 ou depois? | Complica o parsing ("mercado 50" não diz de qual conta saiu). Talvez conta padrão implícita. |
-| 11 | Categorias iniciais no onboarding, ou household começa vazio? | Vazio força o fluxo de criação por chat (bom para testar), mas piora a primeira impressão. |
+| 7 | Limiar de confiança entre executar e perguntar | Inventar número agora é chute. Sai da Etapa 5 com dado, via avaliação formal (`nlu-eval`, estrategia-de-testes.md) — não é preferência de household, é constante de engenharia. Registrado em 2026-09-04: durante a validação é config global do app (muda editando e redeployando), nunca por household — só um household existe. Virar parâmetro por household não faz sentido aqui: precisão de IA não é gosto de família. |
+| 8 | TTL de `PendingAction` | Sugerido 10 min, sem base. Calibrar na Etapa 5, usando o próprio uso da família como sinal. Registrado em 2026-09-04: durante a validação é config global do app, mesmo motivo do item 7 — só um household. Diferente do item 7, este é candidato razoável a virar ajuste por household (administrado por `OWNER`, mesmo papel que já administra assinatura — ADR-0007/ADR-0012) quando houver mais de uma família com ritmo de resposta diferente — mas construir isso agora, para um household só, é over-engineering sem usuário que precise. |
 
 ## Não bloqueiam nada ainda
 
-| # | Questão |
-|---|---|
-| 12 | Recorrência de tarefas — modelo de dados |
-| 13 | Anexo de foto de cupom fiscal no chat |
-| 14 | Orçamento por categoria e alertas |
-| 15 | Múltiplas listas de compras simultâneas (mercado, farmácia, feira) |
+| # | Questão | Nota |
+|---|---|---|
+| 12 | Recorrência de tarefas — modelo de dados | — |
+| 13 | Anexo de foto de cupom fiscal no chat | Ideia registrada em 2026-08-31: LLM com visão lê a foto e extrai os dados do lançamento (valor, categoria, itens), em vez de só anexar a imagem ao lançamento manual. Fica fora da ADR-0004 (que cobre só entrada por texto/function calling) — mereceria ADR própria: pipeline de visão, custo por chamada, e onde a imagem é armazenada (LGPD). Não é caminho crítico do elo lista→despesa. Verificado em 2026-08-31: Mistral (já provedor escolhido para Etapas 1-5, [ADR-0009](01-adr/0009-mistral-ai-como-provedor-de-llm-na-validacao.md)) também tem visão computacional no tier gratuito — reduz o custo de validar esta ideia se e quando ela for decidida, sem exigir segundo provedor. |
+| 14 | Orçamento por categoria e alertas | — |
+| 15 | Múltiplas listas de compras simultâneas (mercado, farmácia, feira) | — |

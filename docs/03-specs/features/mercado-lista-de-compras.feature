@@ -54,3 +54,8 @@ Funcionalidade: Lista de compras compartilhada por chat
     Quando "Bruno" envia "comprei o feijão"
     Então nenhum item é marcado como comprado
     E "Bruno" recebe uma pergunta oferecendo registrar "Feijão" como comprado
+
+  Cenário: Reentrega da mesma mensagem pelo provedor
+    Quando o provedor entrega duas vezes a mesma mensagem "acabou o arroz" de "Ana"
+    Então o item "Arroz" entra na lista de compras uma única vez
+    E "Ana" recebe exatamente um recibo

@@ -1,8 +1,23 @@
+---
+tipo: adr
+numero: 3
+status: aceita
+data: 2026-08-31
+modulos:
+  - banco
+  - finance
+  - shopping
+  - tasks
+  - identity
+depende_de: []
+supera: []
+superada_por:
+---
+
 # ADR-0003 — Isolamento multi-tenant por household
 
-- **Status**: Proposta
-- **Data**: 2026-08-31
 - **Impacta**: banco, todos os módulos de domínio
+- **Termos**: [Household](../00-produto/glossario.md#núcleo)
 
 ## Contexto
 
@@ -21,6 +36,18 @@ definido em um único ponto de entrada.
 
 Nenhuma query de domínio pode ser escrita assumindo que o desenvolvedor
 lembrará de filtrar.
+
+**Exceção nomeada, decidida aqui, não deixada implícita**: `inbound_message`
+tem `household_id` nullable (mensagem de identidade ainda não resolvida —
+ver modelo-de-dados.md). Enquanto nulo, a linha não é visível por nenhuma
+policy de tenant (`household_id = current_setting(...)` nunca casa com
+`NULL`). A resolução de identidade em `channel`/`identity` — o único código
+que precisa enxergar essas linhas antes de saber o household — roda sob uma
+policy própria e restrita para essa tabela (`USING (household_id = tenant()
+OR household_id IS NULL)`), aplicada somente ao papel de banco usado por
+esse caminho. `finance`, `shopping` e `tasks` nunca usam esse papel e nunca
+veem linha com `household_id` nulo. Nenhuma outra tabela tem exceção
+equivalente.
 
 ## Alternativas consideradas
 
@@ -51,6 +78,9 @@ RLS, nunca no lugar.
   `SET LOCAL` precisa estar amarrado à transação, ou vaza contexto entre
   requisições que reusam a mesma conexão. **Este é o risco real da decisão.**
 - Jobs em background precisam definir contexto explicitamente.
+- A exceção de `inbound_message` (household nulo) exige uma segunda policy
+  e um papel de banco à parte só para o caminho de resolução de identidade —
+  mais uma peça de RLS pra acertar, não zero-custo.
 
 ## Gatilhos de revisão
 

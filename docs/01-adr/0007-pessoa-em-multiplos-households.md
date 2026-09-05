@@ -1,9 +1,22 @@
+---
+tipo: adr
+numero: 7
+status: aceita
+data: 2026-08-31
+modulos:
+  - banco
+  - channel
+  - billing
+depende_de: []
+supera: []
+superada_por:
+---
+
 # ADR-0007 — Pessoa pode pertencer a múltiplos households
 
-- **Status**: Proposta
-- **Data**: 2026-08-31
 - **Impacta**: banco (`member`, `channel_identity`), `channel` (resolução de
-  contexto), billing (ADR-0006)
+  contexto), billing ([ADR-0006](0006-assinatura-por-household-e-canal-proativo.md))
+- **Termos**: [Membro, Vínculo com o household, Household ativo](../00-produto/glossario.md#núcleo)
 
 ## Contexto
 
@@ -54,14 +67,26 @@ identificando uma única pessoa, e uma pessoa pode ter `household_membership`
 em quantas famílias fizer sentido.
 
 `active_household_id` é o household para o qual as mensagens daquela conversa
-são resolvidas. Troca por comando explícito no chat (ex.: "usar casa dos
-pais"), persistida até a próxima troca — não é perguntada a cada mensagem.
-Quando `active_household_id` referencia um household onde a pessoa tem mais
-de um `household_membership` possível, todo recibo nomeia explicitamente qual
-household recebeu o lançamento, para que o erro de contexto seja visível
-mesmo quando o usuário não pergunta.
+são resolvidas. **Identificar a família é custo que só existe quando há
+ambiguidade real.** Pessoa com um único `household_membership` tem
+`active_household_id` preenchido automaticamente no onboarding e nunca
+precisa disso de novo — nenhuma pergunta, nenhum comando, nenhuma menção de
+household no recibo. É o caso comum e deve continuar invisível.
 
-Isso é uma exceção deliberada, não uma violação, à regra geral da ADR-0003
+A identificação só entra em cena para quem tem mais de um
+`household_membership`: a troca é por comando explícito no chat (ex.: "usar
+casa dos pais"), persistida até a próxima troca — não é perguntada a cada
+mensagem — e, enquanto a pessoa tiver mais de um household, todo recibo
+nomeia explicitamente qual household recebeu o lançamento, para que o erro de
+contexto seja visível mesmo quando o usuário não pergunta.
+
+`active_household_id` vive em `channel_identity`, não em `member`: o escopo
+da troca é **por canal vinculado**, não por pessoa. Enquanto só existir
+Telegram (Etapas 1-6), isso é invisível — uma pessoa tem um único
+`channel_identity`. Ver Gatilhos de revisão para quando isso deixa de ser
+verdade.
+
+Isso é uma exceção deliberada, não uma violação, à regra geral da [ADR-0003](0003-isolamento-multi-tenant-por-household.md)
 ("`household_id` obrigatório em toda tabela de dado de usuário"): `member` é
 identidade de pessoa, não dado de household — o limite de isolamento
 multi-tenant continua vivendo em `household_membership` e em toda tabela de
@@ -90,10 +115,14 @@ mataria justamente o caso que a ADR existe para viabilizar.
 ## Consequências
 
 ### Positivas
+- Custo de identificação de household é proporcional à ambiguidade real: a
+  maioria das pessoas terá um único household e nunca vê pergunta, comando ou
+  menção de família no recibo — a complexidade só aparece para quem
+  efetivamente precisa dela.
 - Cobre os casos reais de família dividida sem exigir que a pessoa gerencie
   múltiplos números de telefone ou contas de Telegram.
 - `household_membership` extra é assinatura extra com custo de aquisição zero
-  (ADR-0006 cobra por household), o que torna o caso de uso comercialmente
+  ([ADR-0006](0006-assinatura-por-household-e-canal-proativo.md) cobra por household), o que torna o caso de uso comercialmente
   positivo, não só uma concessão de UX.
 - A mudança troca uma migration futura cara (dado financeiro em produção) por
   uma tabela de junção barata agora, antes de existir dado real.
@@ -108,9 +137,9 @@ mataria justamente o caso que a ADR existe para viabilizar.
   (`active_household_id`) mais o conjunto de `household_membership` — mais um
   lugar onde um bug de resolução de contexto pode silenciosamente enviar dado
   para o household errado.
-- `docs/02-arquitetura/modelo-de-dados.md` fica desatualizado em relação a
-  esta ADR até ser revisado — o schema documentado hoje ainda mostra `member`
-  com `household_id` e `channel_identity` sem `active_household_id`.
+- ~~`docs/02-arquitetura/modelo-de-dados.md` fica desatualizado em relação a
+  esta ADR até ser revisado~~ — corrigido: o schema de Identidade já reflete
+  `member` sem `household_id`, `household_membership` e `active_household_id`.
 
 ## Gatilhos de revisão
 
@@ -118,3 +147,9 @@ Se, na prática, a maioria das pessoas nunca usar um segundo household, avaliar
 se a complexidade de `active_household_id` vale a pena manter ou se um comando
 de "confirmar household a cada N dias" reduziria o risco de lançamento errado
 sem reintroduzir pergunta por mensagem.
+
+Quando o WhatsApp entrar ([ADR-0002](0002-telegram-primeiro-whatsapp-depois.md), Etapa 7) e uma pessoa puder ter `channel_identity`
+em mais de um canal ao mesmo tempo, decidir se trocar o household ativo num
+canal propaga para os outros canais da mesma pessoa ou fica independente por
+canal — hoje não decidido, porque não existe ainda (não é caso da validação
+em Telegram único).

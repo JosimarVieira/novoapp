@@ -1,0 +1,43 @@
+properties:
+  modulo:
+    displayName: Módulo
+  status:
+    displayName: Status
+  atualizado_em:
+    displayName: Atualizado em
+  adrs:
+    displayName: ADRs que sustentam
+  file.name:
+    displayName: Documento
+views:
+  - type: table
+    name: SDDs
+    filters:
+      and:
+        - tipo == "sdd"
+    order:
+      - modulo
+      - file.name
+      - status
+      - atualizado_em
+      - adrs
+  - type: table
+    name: SDD sem lastro
+    filters:
+      and:
+        - tipo == "sdd"
+        - adrs.isEmpty()
+    order:
+      - modulo
+      - file.name
+      - status
+  - type: table
+    name: Modelagem e visão geral
+    filters:
+      and:
+        - tipo == "arquitetura"
+    order:
+      - file.name
+      - status
+      - atualizado_em
+      - adrs

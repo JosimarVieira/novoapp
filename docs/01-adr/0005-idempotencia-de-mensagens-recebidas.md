@@ -1,7 +1,18 @@
+---
+tipo: adr
+numero: 5
+status: aceita
+data: 2026-08-31
+modulos:
+  - channel
+  - finance
+depende_de: []
+supera: []
+superada_por:
+---
+
 # ADR-0005 — Idempotência de mensagens recebidas
 
-- **Status**: Proposta
-- **Data**: 2026-08-31
 - **Impacta**: `channel`, `finance`
 
 ## Contexto

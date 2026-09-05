@@ -1,7 +1,18 @@
+---
+tipo: adr
+numero: 4
+status: aceita
+data: 2026-08-31
+modulos:
+  - nlu
+  - conversation
+depende_de: []
+supera: []
+superada_por:
+---
+
 # ADR-0004 — Interpretação por function calling com política de confiança
 
-- **Status**: Proposta
-- **Data**: 2026-08-31
 - **Impacta**: `nlu`, `conversation`, UX do chat
 
 ## Contexto

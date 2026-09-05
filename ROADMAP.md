@@ -3,17 +3,34 @@
 Cada etapa termina em algo que dá para ver funcionando. Nenhuma etapa entrega
 só plano.
 
-## Etapa 0 — Fundação documental (em curso)
+## Etapa 0 — Fundação documental (fechada em 2026-09-04)
 
-**Entregável**: ADRs 0001-0006 aceitas, glossário fechado, features das Etapas
-1-3 escritas, decisões abertas 1 e 6 resolvidas.
+**Entregável**: todas as ADRs aceitas no fechamento da etapa (escopo cresceu
+muito além das 0001-0006 originalmente previstas aqui — quais e quantas em
+`docs/adr.base`, filtro `status: aceita`; faixa fixa neste parágrafo já
+desatualizou duas vezes), glossário fechado, features das Etapas 1-3
+escritas. Decisões abertas 1, 6, 9, 10, 11 e o #17 original
+(fechamento de fatura) já resolvidas por virarem ADR.
 
-Critério de saída: nenhum item marcado `[a verificar]` nas ADRs aceitas.
+Critério de saída: nenhum item marcado `[a verificar]` nas ADRs aceitas —
+cumprido. A feature de vínculo de identidade (onboarding) está escrita
+(`03-specs/features/vinculo-de-identidade.feature`), com a ADR-0020
+(convite de membro, Aceita em 2026-09-05) registrando o schema e o fluxo.
+Nada documentado bloqueia mais abrir o editor pra Etapa 1.
 
 ## Etapa 1 — Bot Telegram + despesa (~1 semana)
 
 Webhook, adaptador de canal, `identity`, idempotência, uma tool no LLM,
 Flyway com schema mínimo já multi-tenant e RLS ativa.
+
+Escopo decidido em 2026-09-05, corrigindo uma imprecisão de escopo: esta
+etapa toca `channel`, `identity`, `nlu`, `conversation` e `finance` — não só
+os dois primeiros. Mas cobre só o esqueleto andante do
+`financas-lancamento-por-chat.feature`: cenários `@etapa1` (categoria já
+reconhecida, sem ambiguidade, reentrega, identidade não vinculada). Os
+cenários `@etapa2` (ambiguidade, criar categoria, valor ausente, desfazer)
+exigem `PendingAction` e a política de confiança média/baixa da ADR-0004
+inteira — ficam pra Etapa 2, junto com mercado/tarefas.
 
 **Entregável**: você manda `mercado 50` no Telegram e vê a linha no Postgres,
 com recibo no chat. Teste de vazamento de tenant verde.
@@ -36,8 +53,20 @@ Foco na tela de **correção** de lançamento, não na de criação. É onde o u
 conserta o erro da IA, e é o que decide se ele confia no sistema. A tela de
 criação manual é secundária — quem quer criar manualmente já tem planilha.
 
+Dois itens novos, registrados em 2026-09-04 ao validar a visão do produto com
+o autor — fazem parte do escopo desta etapa, ainda sem desenho de tela:
+
+- **Dashboard** ao abrir o app: últimas transações, entradas/saídas por
+  período (diário, semanal, mensal, anual), e outras informações relevantes
+  à primeira vista. Sem ADR própria ainda — layout e métricas exatas ficam
+  para quando esta etapa começar de fato.
+- **Central de pendências**: lista toda `PendingAction` ainda sem resolução
+  — inclusive as que expiraram no chat sem resposta — com notificação,
+  resolvível ali dentro do app. Mecanismo já decidido em [ADR-0018](docs/01-adr/0018-central-de-pendencias.md); a tela em si
+  é trabalho desta etapa.
+
 **Entregável**: instalável no celular, mostra o que veio do chat, permite
-corrigir e recategorizar.
+corrigir e recategorizar, com dashboard inicial e central de pendências.
 
 ## Etapa 5 — Uso real na família (4 semanas)
 
@@ -51,7 +80,8 @@ a Etapa 6 não começa. Precisão do interpretador é o produto.
 
 ## Etapa 6 — Verticalização comercial
 
-Signup, onboarding de household, verificação de telefone, convite de membro,
+Endurecer signup e verificação de telefone pra uso fora da família
+(o mecanismo de convite em si já existe desde a Etapa 1, ADR-0020),
 billing por household, LGPD (política, base legal, exclusão real).
 
 **Entregável**: alguém de fora da sua família consegue criar conta e usar
