@@ -2,3 +2,4 @@
 .claude/scheduled_tasks.lock
 legacy/
 .obsidian/
+docs/.obsidian/
