@@ -104,13 +104,33 @@ verificação é desligada — aceitável só em máquina local.
 
 ## Deploy no Railway
 
-O `railway.json` está aqui, ao lado do `pom.xml`. Na Railway, o serviço precisa
-de **Root Directory = `server`**, porque a raiz do repositório não tem `pom.xml`.
+O `railway.json` e o `Dockerfile` estão aqui, ao lado do `pom.xml`. Na Railway,
+o serviço precisa de **Root Directory = `server`**, porque a raiz do repositório
+não tem `pom.xml`.
+
+O build usa o **`Dockerfile` deste diretório**, não o builder automático da
+plataforma. O motivo é concreto, não preferência: o Nixpacks instalava `jdk21`
+no ambiente, mas o pacote `maven` do nixpkgs traz o próprio JDK (19) e compila
+com ele — o `javac` que rodava era o 19, e o 19 recusa `release 21`. A variável
+`NIXPACKS_JDK_VERSION` não alcança isso, porque o wrapper do Maven amarra o
+próprio `JAVA_HOME`. Com o `Dockerfile`, a versão está em `FROM
+maven:3.9-eclipse-temurin-21` e o build é idêntico aqui e lá.
+
+Efeito colateral bem-vindo: o Nixpacks injetava **todas** as variáveis do
+serviço como `ARG`/`ENV` na imagem, inclusive `TELEGRAM_BOT_TOKEN` e
+`MISTRAL_API_KEY`, gravando segredo nas camadas de build. O `Dockerfile` recebe
+só o código; os segredos entram apenas no runtime.
 
 O build roda `mvn -B -DskipTests package`. **Pular os testes aqui é
-deliberado**: eles sobem um Postgres via Testcontainers, e o builder da Railway
-não tem Docker. Quem barra merge com teste é o CI, não o deploy — enquanto não
-houver CI, isso depende de você rodar `mvn test` antes de dar push.
+deliberado**: eles sobem um Postgres via Testcontainers, e não há Docker dentro
+do build. Quem barra merge com teste é o CI, não o deploy — enquanto não houver
+CI, isso depende de você rodar `mvn test` antes de dar push.
+
+Para reproduzir o build exatamente como a Railway faz:
+
+```bash
+docker build -t novoapp-server .
+```
 
 ### Postgres
 
@@ -125,7 +145,6 @@ de banco. Postgres gerenciado que não conceda `CREATEROLE` ao usuário principa
 Use referência entre serviços para não copiar credencial na mão:
 
 ```
-NIXPACKS_JDK_VERSION        = 21
 NOVOAPP_DB_URL              = jdbc:postgresql://${{Postgres.PGHOST}}:${{Postgres.PGPORT}}/${{Postgres.PGDATABASE}}
 NOVOAPP_DB_ADMIN_USER       = ${{Postgres.PGUSER}}
 NOVOAPP_DB_ADMIN_PASSWORD   = ${{Postgres.PGPASSWORD}}
@@ -135,11 +154,8 @@ TELEGRAM_WEBHOOK_SECRET     = <o mesmo do setWebhook>
 MISTRAL_API_KEY             = <console.mistral.ai>
 ```
 
-Quatro armadilhas, na ordem em que costumam aparecer:
+Três armadilhas, na ordem em que costumam aparecer:
 
-- **`NIXPACKS_JDK_VERSION=21` não é opcional.** O Nixpacks usa JDK 17 por
-  padrão e o `pom.xml` compila com `release 21`: sem essa variável o build falha
-  com "release version 21 is not supported".
 - **`Postgres` nas referências é o nome do serviço**, não uma palavra reservada.
   Se você renomear o serviço de banco, as quatro referências quebram. O editor
   de variáveis da Railway monta a referência para você — use ele em vez de

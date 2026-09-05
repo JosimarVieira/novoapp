@@ -185,8 +185,16 @@ faz, e que alguém encontraria usando.
    os roda automaticamente. A `estrategia-de-testes.md` fala em "falha o build" e
    "barra um merge" — hoje isso depende de disciplina, que é exatamente o que a
    [ADR-0003](../01-adr/0003-isolamento-multi-tenant-por-household.md) diz não funcionar.
-6. **Sem configuração de deploy.** Não há Dockerfile nem manifesto: rodar fora da
-   máquina local ainda não foi feito.
+6. ~~**Sem configuração de deploy.**~~ Fechada em 2026-09-05: `server/Dockerfile`
+   e `server/railway.json`, com a aplicação rodando na Railway. O build começou
+   pelo builder automático da plataforma e foi trocado por Dockerfile depois de
+   uma falha instrutiva — o Nixpacks instalava `jdk21` no ambiente, mas o pacote
+   `maven` do nixpkgs traz o próprio JDK (19) e compila com ele, e o 19 recusa
+   `release 21`. A variável `NIXPACKS_JDK_VERSION` não alcança isso. Com o
+   Dockerfile a versão é explícita e o build é reproduzível na máquina de quem
+   programa. Ganho junto: o Nixpacks injetava todas as variáveis do serviço como
+   `ARG`/`ENV`, gravando `TELEGRAM_BOT_TOKEN` e `MISTRAL_API_KEY` nas camadas da
+   imagem; agora os segredos só existem em runtime.
 7. **Retenção de `inbound_message` não decidida** ([decisão aberta #4](../DECISOES-ABERTAS.md)). Toda
    mensagem fica armazenada, inclusive conteúdo pessoal.
 8. **`nlu-eval` não existe.** A medição de taxa de acerto por tool é Etapa 5, mas
