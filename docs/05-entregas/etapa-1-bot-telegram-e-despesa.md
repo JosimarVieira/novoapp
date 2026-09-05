@@ -202,6 +202,28 @@ faz, e que alguém encontraria usando.
    vale registrar que nada mede o interpretador hoje — e precisão do
    interpretador é o produto.
 
+## Achados do primeiro uso em produção (2026-09-05)
+
+Três coisas que nenhum teste pegou porque nenhuma delas existe fora de um deploy
+real. Ficam registradas porque são o tipo de coisa que se esquece.
+
+1. **A senha do papel de runtime era gravada uma vez só, pela `V1`.** Trocar
+   `NOVOAPP_DB_RUNTIME_PASSWORD` depois deixava a aplicação tentando uma senha
+   que o banco não tinha — e, como o datasource de domínio é preguiçoso, o boot
+   passava limpo e o erro aparecia **só na primeira requisição**, como um 500 no
+   webhook com a aplicação aparentemente saudável. Corrigido com o callback
+   `db/migration/afterMigrate.sql`, que roda a cada start, mesmo sem migração
+   pendente, e reconcilia a senha com a variável. Isso resolve a quarta
+   consequência negativa da [ADR-0022](../01-adr/0022-papel-de-banco-pre-tenant-para-identidade.md), que dizia que rotacionar exigiria
+   `ALTER ROLE` manual — vale decidir se a ADR merece nota de correção.
+2. **O Postgres em produção é 18.6, não 16.** `POSTGRES_VERSION=16` foi definido
+   depois do volume já ter sido inicializado. Não quebra nada — o requisito real
+   é 15+, por causa do `NULLS NOT DISTINCT` no índice único de `category` — mas
+   os testes rodam contra 16 e a produção contra 18, o que é uma divergência a
+   fechar antes de confiar demais no par.
+3. **O `secret_token` do Telegram não aceita `+`, `/` nem `=`**, que é o que o
+   `base64` produz. O README ensinava a gerar assim.
+
 ## Decisões tomadas ao implementar
 
 Uma virou ADR; as outras ficaram registradas no SDD do módulo, seguindo o

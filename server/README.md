@@ -169,15 +169,12 @@ TELEGRAM_WEBHOOK_SECRET     = <o mesmo do setWebhook>
 MISTRAL_API_KEY             = <console.mistral.ai>
 ```
 
-Três armadilhas, na ordem em que costumam aparecer:
+Duas armadilhas, na ordem em que costumam aparecer:
 
 - **`Postgres` nas referências é o nome do serviço**, não uma palavra reservada.
   Se você renomear o serviço de banco, as quatro referências quebram. O editor
   de variáveis da Railway monta a referência para você — use ele em vez de
   digitar.
-- **`NOVOAPP_DB_RUNTIME_PASSWORD` é gravada no papel do banco na primeira
-  migration** e não muda depois: migration com checksum fixo não roda de novo.
-  Trocar essa variável sozinha derruba a aplicação. Ver "Papéis de banco".
 - **Não defina `PORT`.** A Railway injeta; o `%prod.quarkus.http.port` já lê.
 
 Depois do primeiro deploy, gere o domínio do serviço e rode o `setWebhook`
@@ -258,15 +255,17 @@ ADR-0003 registra como o mais caro de diagnosticar.
 Papéis no Postgres são do cluster, não do banco: dois ambientes no mesmo cluster
 compartilham `novoapp_app` e `novoapp_identity`.
 
-**Rotacionar a senha de `novoapp_runtime`** não é migration. A `V1` cria o papel
-com a senha vinda de um placeholder do Flyway, e migration com checksum fixo não
-roda de novo. Para trocar:
+**Rotacionar a senha de `novoapp_runtime`** é só trocar
+`NOVOAPP_DB_RUNTIME_PASSWORD` e reiniciar. O callback
+`db/migration/afterMigrate.sql` roda a cada start — inclusive quando não há
+migração pendente — e reconcilia a senha do papel com a variável. A variável é a
+fonte da verdade.
 
-```sql
-ALTER ROLE novoapp_runtime WITH PASSWORD '<nova senha>';
-```
-
-e atualize `NOVOAPP_DB_RUNTIME_PASSWORD`.
+Nem sempre foi assim: até 2026-09-05 a senha era gravada só pela `V1`, e trocar
+a variável depois deixava a aplicação tentando uma senha que o banco não tinha.
+Pior, falhava **só na primeira requisição** — o datasource de domínio é
+preguiçoso, então o boot passava limpo e o webhook devolvia 500 com a aplicação
+aparentemente saudável.
 
 ## Estrutura
 
