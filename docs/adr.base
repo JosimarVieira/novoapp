@@ -36,6 +36,10 @@ views:
       note.status: 110
       note.data: 155
       note.modulos: 398
+    sort:
+      - property: numero
+        direction: ASC
+
   - type: table
     name: Por status
     groupBy:
@@ -46,6 +50,10 @@ views:
       - file.name
       - data
       - modulos
+    sort:
+      - property: numero
+        direction: ASC
+
   - type: table
     name: Vigentes
     filters:
@@ -56,6 +64,10 @@ views:
       - file.name
       - modulos
       - depende_de
+    sort:
+      - property: numero
+        direction: ASC
+
   - type: table
     name: Em aberto
     filters:
@@ -66,6 +78,10 @@ views:
       - file.name
       - data
       - modulos
+    sort:
+      - property: numero
+        direction: ASC
+
   - type: table
     name: Superadas
     filters:
@@ -75,3 +91,6 @@ views:
       - numero
       - file.name
       - superada_por
+    sort:
+      - property: numero
+        direction: ASC

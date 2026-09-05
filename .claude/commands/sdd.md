@@ -4,9 +4,26 @@ description: Escreve ou atualiza o Software Design Document de um módulo
 
 Escreva o SDD do módulo: $ARGUMENTS
 
-Antes de escrever, leia nesta ordem: `CLAUDE.md`, as ADRs aceitas,
+Antes de escrever, leia nesta ordem: `CLAUDE.md`, as ADRs aceitas
+(`status: aceita` no frontmatter — filtre por isso, não leia as 20),
 `docs/02-arquitetura/modelo-de-dados.md` e as features do domínio em
 `docs/03-specs/features/`.
+
+O arquivo abre com frontmatter, no mesmo contrato das ADRs — sem ele o SDD
+fica fora de `docs/sdd.base` e volta a ser rastreado por tabela manual:
+
+```yaml
+---
+tipo: sdd
+modulo: channel          # um dos pacotes do CLAUDE.md, ou `geral`
+status: rascunho         # rascunho | escrito | desatualizado
+atualizado_em: AAAA-MM-DD
+adrs: [ADR-0001]         # as ADRs que sustentam este design
+---
+```
+
+`adrs` não é enfeite: é o lastro. SDD que não consegue listar nenhuma ADR é
+design sem decisão por trás — pare e escreva a ADR primeiro.
 
 Estrutura obrigatória:
 1. **Responsabilidade** — uma frase. Se precisar de duas, o módulo faz coisa
