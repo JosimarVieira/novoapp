@@ -75,12 +75,18 @@ No Telegram, fale com **@BotFather** → `/newbot` → nome de exibição → us
 terminando em `bot`. Ele devolve o token (`123456789:AAF...`), que é o
 `TELEGRAM_BOT_TOKEN`.
 
-Gere o segredo do webhook — só aceita `A-Z`, `a-z`, `0-9`, `_` e `-`, de 1 a
-256 caracteres:
+Gere o segredo do webhook. O Telegram só aceita `A-Z`, `a-z`, `0-9`, `_` e `-`,
+de 1 a 256 caracteres:
 
 ```bash
-export TELEGRAM_WEBHOOK_SECRET=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
+export TELEGRAM_WEBHOOK_SECRET=$(LC_ALL=C tr -dc 'A-Za-z0-9_-' < /dev/urandom | head -c 48)
+echo "[$TELEGRAM_WEBHOOK_SECRET]"
 ```
+
+`tr -dc` **mantém só** o conjunto permitido. Não use `base64`: ele produz `+`,
+`/` e `=`, e o `setWebhook` responde
+`Bad Request: secret token contains illegal characters`. Os colchetes no `echo`
+revelam espaço ou quebra de linha colada junto no copiar.
 
 ### 5. Apontar o Telegram para cá
 
@@ -91,9 +97,9 @@ ngrok/cloudflared e registre:
 
 ```bash
 curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
-  -d "url=https://<seu-host-publico>/webhook/telegram" \
-  -d "secret_token=$TELEGRAM_WEBHOOK_SECRET" \
-  -d 'allowed_updates=["message"]'
+  --data-urlencode "url=https://<seu-host-publico>/webhook/telegram" \
+  --data-urlencode "secret_token=$TELEGRAM_WEBHOOK_SECRET" \
+  --data-urlencode 'allowed_updates=["message"]'
 
 # conferir
 curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getWebhookInfo"
@@ -101,6 +107,10 @@ curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getWebhookInfo"
 
 `allowed_updates=["message"]` porque esta etapa só trata mensagem: não faz
 sentido receber edição, reação e callback de botão para descartar.
+
+O segredo precisa ser **o mesmo** aqui e na variável de ambiente da aplicação.
+Ao trocá-lo em produção, atualize a variável primeiro e espere o redeploy: até
+lá a aplicação confere o segredo antigo e responde 403 a tudo.
 
 O `secret_token` volta no header `X-Telegram-Bot-Api-Secret-Token` a cada
 entrega e é conferido. Sem ele, qualquer um que descubra a URL injeta mensagem
