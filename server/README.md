@@ -125,6 +125,7 @@ de banco. Postgres gerenciado que não conceda `CREATEROLE` ao usuário principa
 Use referência entre serviços para não copiar credencial na mão:
 
 ```
+NIXPACKS_JDK_VERSION        = 21
 NOVOAPP_DB_URL              = jdbc:postgresql://${{Postgres.PGHOST}}:${{Postgres.PGPORT}}/${{Postgres.PGDATABASE}}
 NOVOAPP_DB_ADMIN_USER       = ${{Postgres.PGUSER}}
 NOVOAPP_DB_ADMIN_PASSWORD   = ${{Postgres.PGPASSWORD}}
@@ -134,7 +135,19 @@ TELEGRAM_WEBHOOK_SECRET     = <o mesmo do setWebhook>
 MISTRAL_API_KEY             = <console.mistral.ai>
 ```
 
-`PORT` a Railway injeta sozinha; o `%prod.quarkus.http.port` já a lê.
+Quatro armadilhas, na ordem em que costumam aparecer:
+
+- **`NIXPACKS_JDK_VERSION=21` não é opcional.** O Nixpacks usa JDK 17 por
+  padrão e o `pom.xml` compila com `release 21`: sem essa variável o build falha
+  com "release version 21 is not supported".
+- **`Postgres` nas referências é o nome do serviço**, não uma palavra reservada.
+  Se você renomear o serviço de banco, as quatro referências quebram. O editor
+  de variáveis da Railway monta a referência para você — use ele em vez de
+  digitar.
+- **`NOVOAPP_DB_RUNTIME_PASSWORD` é gravada no papel do banco na primeira
+  migration** e não muda depois: migration com checksum fixo não roda de novo.
+  Trocar essa variável sozinha derruba a aplicação. Ver "Papéis de banco".
+- **Não defina `PORT`.** A Railway injeta; o `%prod.quarkus.http.port` já lê.
 
 Depois do primeiro deploy, gere o domínio do serviço e rode o `setWebhook`
 apontando para `https://<dominio>/webhook/telegram`.
