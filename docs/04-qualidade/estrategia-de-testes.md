@@ -35,6 +35,10 @@ Quatro testes que não podem faltar, porque cobrem as regras não negociáveis:
   avaliação separado (`nlu-eval`), rodado sob demanda: N mensagens reais
   anotadas com a intenção esperada, reportando taxa de acerto por tool e
   matriz de confusão. Não bloqueia merge; bloqueia release.
+  A **descrição** do lançamento fica fora dessa taxa: é texto livre, não tem
+  gabarito contra o qual comparar, e incluí-la contaminaria o portão de 90%
+  que decide a continuidade na Etapa 5. Avaliada à parte, por amostra manual
+  ([ADR-0023](../01-adr/0023-descricao-de-lancamento-extraida-pelo-llm.md)).
 - **Estrutura interna.** Teste que quebra em refactor sem mudança de
   comportamento é passivo. Testamos a fronteira do módulo.
 - **Frontend Vue** até a Etapa 4. Antes disso não há frontend.

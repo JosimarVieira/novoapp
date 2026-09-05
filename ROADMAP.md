@@ -56,6 +56,12 @@ Além do que a etapa já previa, herda três lacunas conhecidas da Etapa 1,
 listadas na entrega dela: botão nativo de compartilhar contato, retry com
 backoff na falha de LLM, e o comando de trocar o household ativo ([ADR-0007](docs/01-adr/0007-pessoa-em-multiplos-households.md)).
 
+Entra também a descrição do lançamento ([ADR-0023](docs/01-adr/0023-descricao-de-lancamento-extraida-pelo-llm.md), aceita em 2026-09-05,
+a partir do primeiro uso real): a tool `registrarDespesa` ganha o parâmetro
+opcional `descricao`, extraído pelo LLM e mantido fora da política de
+confiança — nunca vira pergunta. Três cenários `@etapa2` já estão escritos
+no `financas-lancamento-por-chat.feature`. Sem migration: a coluna já existe.
+
 **Entregável**: os seis fluxos do glossário funcionando por chat, incluindo
 "o que está faltando?".
 

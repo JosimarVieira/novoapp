@@ -59,6 +59,33 @@ Funcionalidade: Lançamento de despesa por chat
     E "Ana" recebe uma pergunta curta pedindo o valor
     E o sistema não inventa um valor
 
+  # Descrição (ADR-0023): o LLM extrai o que sobra da mensagem depois de
+  # categoria, valor, conta e data. Nunca gera pergunta, nunca reduz a
+  # confiança -- por isso os três cenários abaixo terminam em lançamento
+  # registrado, nunca em pergunta.
+
+  @etapa2
+  Cenário: Despesa com informação além de categoria e valor
+    Quando "Ana" envia "60 farmacia - remedio joaquim"
+    Então uma despesa de R$ 60,00 é registrada na categoria "Farmácia"
+    E o lançamento fica com uma descrição contendo "remédio" e "Joaquim"
+    E a descrição não repete a categoria nem o valor
+    E o recibo de "Ana" mostra a descrição registrada
+
+  @etapa2
+  Cenário: Mensagem sem nada além de categoria e valor
+    Quando "Ana" envia "mercado 50"
+    Então uma despesa de R$ 50,00 é registrada na categoria "Mercado"
+    E o lançamento fica sem descrição
+    E o sistema não inventa uma descrição a partir da categoria
+
+  @etapa2
+  Cenário: Ausência de descrição nunca vira pergunta
+    Quando "Ana" envia "farmácia 60"
+    Então uma despesa de R$ 60,00 é registrada na categoria "Farmácia"
+    E "Ana" recebe um recibo, não uma pergunta
+    E "Ana" não é perguntada sobre descrição em nenhum momento
+
   @etapa2
   Cenário: Desfazer um lançamento recém-criado
     Dado que "Ana" registrou uma despesa de R$ 50,00 em "Mercado" há 2 minutos
