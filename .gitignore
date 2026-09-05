@@ -8,3 +8,10 @@ docs/.obsidian/
 target/
 .mvn/
 *.class
+
+# Segredos locais. O Quarkus le o .env do diretorio de onde voce roda o mvn,
+# entao ele vive em server/.env -- e nunca entra no git. .env.example fica,
+# porque so tem os nomes das variaveis.
+.env
+.env.*
+!.env.example
