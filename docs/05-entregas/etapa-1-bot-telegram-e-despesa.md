@@ -181,10 +181,11 @@ faz, e que alguém encontraria usando.
 4. **`member` não tem RLS.** Decisão consciente ([ADR-0007](../01-adr/0007-pessoa-em-multiplos-households.md), [ADR-0022](../01-adr/0022-papel-de-banco-pre-tenant-para-identidade.md)) e
    mitigada — só o papel pré-tenant tem privilégio sobre ela —, mas quem lê
    `member` lê todo mundo.
-5. **Sem CI.** Os testes rodam com `mvn test` na máquina de quem programa; nada
-   os roda automaticamente. A `estrategia-de-testes.md` fala em "falha o build" e
-   "barra um merge" — hoje isso depende de disciplina, que é exatamente o que a
-   [ADR-0003](../01-adr/0003-isolamento-multi-tenant-por-household.md) diz não funcionar.
+5. ~~**Sem CI.**~~ Fechada em 2026-09-05: `.github/workflows/ci.yml` roda
+   `mvn test` e o `docker build` a cada push na `main` e em todo pull request.
+   Fica um resíduo que só o dono do repositório resolve: **o workflow reporta,
+   não impede** — barrar merge exige branch protection na `main`, que é
+   configuração do GitHub e não mora no repositório.
 6. ~~**Sem configuração de deploy.**~~ Fechada em 2026-09-05: `server/Dockerfile`
    e `server/railway.json`, com a aplicação rodando na Railway. O build começou
    pelo builder automático da plataforma e foi trocado por Dockerfile depois de

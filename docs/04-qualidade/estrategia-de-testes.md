@@ -45,6 +45,22 @@ Quatro testes que não podem faltar, porque cobrem as regras não negociáveis:
   testa ali é a política de confiança e a execução, não o modelo.
 - Canal sempre stubbado. Nenhum teste envia mensagem de verdade.
 
+## Onde isso roda
+
+`.github/workflows/ci.yml`, a cada push na `main` e em todo pull request:
+`mvn test` (arquitetura, isolamento de tenant, idempotência, orçamento de
+resposta e os cenários Gherkin) e, se passar, `docker build` da imagem de
+deploy. Existe desde 2026-09-05 — antes disso, "falha o build" e "barra um
+merge" dependiam de alguém lembrar de rodar os testes, que é o tipo de
+disciplina que a [ADR-0003](../01-adr/0003-isolamento-multi-tenant-por-household.md) diz não funcionar.
+
+O `docker build` está no CI por um motivo específico: o build de deploy pula os
+testes, então nada mais garante que o `Dockerfile` compila. Foi a regressão que
+quebrou o deploy duas vezes.
+
+**O workflow reporta, não impede.** Barrar merge de fato exige branch protection
+na `main`, que é configuração do GitHub e não vive no repositório.
+
 ## Definition of Done
 
 Uma tarefa está pronta quando:

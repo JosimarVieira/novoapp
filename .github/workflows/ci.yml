@@ -1,0 +1,64 @@
+# Torna verdadeiro o que a estrategia-de-testes.md ja afirmava: "falha o build".
+# Ate existir isto, os quatro testes obrigatorios dependiam de alguem lembrar de
+# rodar `mvn test` antes do push -- exatamente o tipo de disciplina que a
+# ADR-0003 diz nao funcionar.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Push em cima de push cancela o anterior: o que importa e o ultimo estado.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Testes
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      # O repositorio inteiro, nao so server/: a aceitacao le os .feature de
+      # docs/03-specs direto, sem copia.
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      # O runner do Ubuntu ja tem Docker, que os Testcontainers exigem: os
+      # testes de RLS precisam de Postgres real, nunca H2.
+      - name: mvn test
+        working-directory: server
+        run: mvn -B test
+
+      - name: Relatorios de teste
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: server/target/surefire-reports/
+          if-no-files-found: ignore
+
+  image:
+    name: Imagem de deploy
+    # So depois dos testes: nao adianta validar a imagem de codigo quebrado.
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # O build de deploy da Railway pula os testes, entao ninguem mais garante
+      # que o Dockerfile compila. Esta etapa cobre a regressao que ja aconteceu
+      # duas vezes: o build quebrar so no deploy.
+      - name: docker build
+        working-directory: server
+        run: docker build -t novoapp-server:ci .

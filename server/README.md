@@ -1,5 +1,7 @@
 # server
 
+[![CI](https://github.com/JosimarVieira/novoapp/actions/workflows/ci.yml/badge.svg)](https://github.com/JosimarVieira/novoapp/actions/workflows/ci.yml)
+
 Backend Quarkus do produto. Etapa 1 do [ROADMAP](../ROADMAP.md): bot Telegram +
 despesa.
 
@@ -33,6 +35,9 @@ verdades.
 
 Um teste fica desabilitado de propósito — `Etapa2AcceptanceTest`, com os
 cenários `@etapa2`. Tirar o `@Disabled` é o primeiro passo da Etapa 2.
+
+O mesmo comando roda no CI (`.github/workflows/ci.yml`) a cada push na `main` e
+em todo pull request, seguido de um `docker build` da imagem de deploy.
 
 ## Rodar localmente
 
