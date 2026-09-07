@@ -66,9 +66,10 @@ tarefas ausente.
 
 ## Etapa 2a — Mercado, ambiguidade e convite por chat (~1,5 semanas)
 
-Começa por tirar o `@Disabled` de `Etapa2AcceptanceTest`: os 17 cenários
+Começa por tirar o `@Disabled` de `Etapa2AcceptanceTest`: os 22 cenários
 `@etapa2` já estão escritos e já falham por passo indefinido, que é o estado
-correto.
+correto (recontado em 2026-09-07 ao fechar as ADRs 0024-0026, que acrescentaram
+cinco cenários novos aos 17 que já existiam).
 
 **A espinha é `PendingAction` e a política de confiança média da [ADR-0004](docs/01-adr/0004-interpretacao-por-function-calling-com-politica-de-confianca.md)**, não
 mercado. Cinco cenários espalhados por três features são a mesma mecânica com
@@ -84,6 +85,24 @@ termina em `transaction`. O TTL é a [decisão aberta #8](docs/DECISOES-ABERTAS.
 sem base): entra como config global do app, provisória e explícita, nunca como
 constante escondida no código.
 
+Criação de categoria por chat ganhou desenho próprio depois da Etapa 1 (ADRs
+[0024](docs/01-adr/0024-categoria-sugerida-por-texto-livre.md),
+[0025](docs/01-adr/0025-desfazer-precedencia-e-escopo.md) e
+[0026](docs/01-adr/0026-hierarquia-na-criacao-de-categoria-por-chat.md), todas
+aceitas em 2026-09-07) — não é só "pergunta sim/não e cria". A tool
+`registrarDespesa` ganha `categoria_sugerida` (texto livre, mutuamente
+exclusivo com o enum `categoria`; para household sem nenhuma categoria a
+propriedade `categoria` some do schema, forçando esse caminho desde a
+primeira mensagem). A `PendingAction` de confirmação ganha uma terceira via
+além de sim/não: correção livre ("restaurante dentro de alimentação"), que
+processa por uma segunda chamada ao modelo — exceção explícita à regra 6
+("confirmações não gastam LLM"), só para esse tipo de pendência — e pode
+criar categoria-pai e subcategoria juntas, respeitando o limite de um nível
+da [ADR-0016](docs/01-adr/0016-subcategoria.md). E `desfazer` ganha
+precedência definida: pendência aberta sempre vence sobre estorno; sem
+pendência, estorna a transação não estornada mais recente do household
+inteiro (qualquer membro, [ADR-0012](docs/01-adr/0012-edicao-de-lancamento-entre-membros.md)), sem janela de tempo inventada.
+
 Herda três lacunas conhecidas da Etapa 1, listadas na entrega dela: botão
 nativo de compartilhar contato, retry com backoff na falha de LLM, e o comando
 de trocar o household ativo ([ADR-0007](docs/01-adr/0007-pessoa-em-multiplos-households.md)).
@@ -95,11 +114,17 @@ confiança — nunca vira pergunta. Três cenários `@etapa2` já estão escrito
 no `financas-lancamento-por-chat.feature`. Sem migration: a coluna já existe.
 
 Existem `ExpenseByChatSteps` e `IdentityLinkSteps`. O glue de mercado é arquivo
-novo, não adaptação.
+novo, não adaptação. O glue dos cinco cenários novos de categoria/hierarquia/
+desfazer (ADRs 0024-0026) também é novo — nenhum reaproveita passo existente
+de `ExpenseByChatSteps` sem revisão, porque nenhum desses fluxos existia
+quando esses steps foram escritos.
 
 **Entregável**: `acabou o arroz` entra na lista, `o que está faltando?`
-responde, `pet shop 80` oferece criar a categoria e grava depois do `sim`. Os
-17 cenários `@etapa2` verdes.
+responde, `pet shop 80` oferece criar a categoria e grava depois do `sim`,
+`restaurante eu e esposa 90` corrigido para "dentro de alimentação" cria a
+hierarquia certa mesmo quando nada existe ainda, e `desfazer` com pergunta
+pendente cancela a pergunta em vez de estornar. Os 22 cenários `@etapa2`
+verdes.
 
 ## Etapa 3 — O elo (~1 semana)
 
