@@ -21,7 +21,8 @@ Aqui ficam só o mapa e o estado.
 | [`elo-fechamento-de-compra`](features/elo-fechamento-de-compra.feature) | O elo lista→despesa: fechar tudo ou em partes, falha atômica, desfazer dos dois lados, fechar sem lista ativa, reentrega | 9 | 9 `@etapa3` |
 | [`vinculo-de-identidade`](features/vinculo-de-identidade.feature) | Onboarding: primeiro contato cria a própria família; convite entra em família existente; telefone errado, convite expirado, convite reusado, pessoa em duas famílias | 10 | 9 `@etapa1`, 1 `@etapa2` |
 
-**Não escrita**: tarefas/agenda. Fica pra quando a etapa dela chegar.
+**Não escrita**: tarefas/agenda. É o primeiro trabalho da Etapa 2b, que
+começa justamente por escrevê-la.
 
 `elo-fechamento-de-compra` é a que materializa o diferencial do produto. O
 comentário no topo do arquivo diz o que isso implica: cenário cortado ali por

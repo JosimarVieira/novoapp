@@ -46,15 +46,47 @@ ressalva operacional: household novo nasce sem categoria ([ADR-0013](docs/01-adr
 categoria por chat é Etapa 2, então as categorias da família são semeadas por
 SQL na validação (passo documentado em [`server/README.md`](server/README.md)).
 
-## Etapa 2 — Mercado, tarefas e consultas (~2 semanas)
+## Nota sobre a ordem das etapas 2 e 3
 
-Começa por tirar o `@Disabled` de `Etapa2AcceptanceTest`: os cenários `@etapa2`
-já estão escritos e já falham por falta de implementação, que é o estado
+A Etapa 2 original — mercado, tarefas e consultas em um bloco de ~2 semanas —
+foi dividida em 2026-09-05. Tarefas não está no caminho crítico do elo, que é o
+diferencial do produto (`CLAUDE.md`) e o que a Etapa 3 demonstra. Manter as três
+coisas juntas colocava a demonstração que vende o produto atrás de duas semanas
+de trabalho que ela não usa.
+
+A ordem de execução é **2a → 3 → 2b**, e é nessa ordem que as seções abaixo
+estão. Os números não foram reatribuídos de propósito: as tags `@etapa1`,
+`@etapa2` e `@etapa3` nos `.feature`, as referências a "Etapa 5" nas decisões
+abertas e as citações a etapa em várias ADRs estão ancoradas neles.
+Renumerar custaria uma varredura por toda a documentação em troca de nada.
+
+O custo da divisão, declarado: os seis fluxos do glossário deixam de sair
+juntos. Quem olhar o produto entre a 3 e a 2b vê finanças e mercado completos e
+tarefas ausente.
+
+## Etapa 2a — Mercado, ambiguidade e convite por chat (~1,5 semanas)
+
+Começa por tirar o `@Disabled` de `Etapa2AcceptanceTest`: os 17 cenários
+`@etapa2` já estão escritos e já falham por passo indefinido, que é o estado
 correto.
 
-Além do que a etapa já previa, herda três lacunas conhecidas da Etapa 1,
-listadas na entrega dela: botão nativo de compartilhar contato, retry com
-backoff na falha de LLM, e o comando de trocar o household ativo ([ADR-0007](docs/01-adr/0007-pessoa-em-multiplos-households.md)).
+**A espinha é `PendingAction` e a política de confiança média da [ADR-0004](docs/01-adr/0004-interpretacao-por-function-calling-com-politica-de-confianca.md)**, não
+mercado. Cinco cenários espalhados por três features são a mesma mecânica com
+conteúdo diferente — uma pergunta com opções numeradas e uma resposta que
+resolve: categoria inexistente, ambiguidade entre categorias parecidas, valor
+ausente, item mencionado que não está na lista, e (já na Etapa 3) fechar compra
+sem informar valor. Construir mercado antes do mecanismo significa construí-lo
+duas vezes.
+
+A primeira migration da etapa é a tabela `pending_action`. Ela está modelada em
+[`modelo-de-dados.md`](docs/02-arquitetura/modelo-de-dados.md) e **não existe no schema** — a `V1__initial_schema.sql`
+termina em `transaction`. O TTL é a [decisão aberta #8](docs/DECISOES-ABERTAS.md) (sugerido 10 minutos,
+sem base): entra como config global do app, provisória e explícita, nunca como
+constante escondida no código.
+
+Herda três lacunas conhecidas da Etapa 1, listadas na entrega dela: botão
+nativo de compartilhar contato, retry com backoff na falha de LLM, e o comando
+de trocar o household ativo ([ADR-0007](docs/01-adr/0007-pessoa-em-multiplos-households.md)).
 
 Entra também a descrição do lançamento ([ADR-0023](docs/01-adr/0023-descricao-de-lancamento-extraida-pelo-llm.md), aceita em 2026-09-05,
 a partir do primeiro uso real): a tool `registrarDespesa` ganha o parâmetro
@@ -62,15 +94,47 @@ opcional `descricao`, extraído pelo LLM e mantido fora da política de
 confiança — nunca vira pergunta. Três cenários `@etapa2` já estão escritos
 no `financas-lancamento-por-chat.feature`. Sem migration: a coluna já existe.
 
-**Entregável**: os seis fluxos do glossário funcionando por chat, incluindo
-"o que está faltando?".
+Existem `ExpenseByChatSteps` e `IdentityLinkSteps`. O glue de mercado é arquivo
+novo, não adaptação.
+
+**Entregável**: `acabou o arroz` entra na lista, `o que está faltando?`
+responde, `pet shop 80` oferece criar a categoria e grava depois do `sim`. Os
+17 cenários `@etapa2` verdes.
 
 ## Etapa 3 — O elo (~1 semana)
 
 `fecharCompra` atômico, `list_checkout`, `desfazer` reversível dos dois lados.
 
+Os nove cenários estão escritos e marcados `@etapa3` na linha `Funcionalidade:`
+do [`elo-fechamento-de-compra.feature`](docs/03-specs/features/elo-fechamento-de-compra.feature). Falta o `Etapa3AcceptanceTest` —
+a tag torna os cenários selecionáveis, não cobertos. Nasce desabilitado, pelo
+mesmo motivo que o da Etapa 2 nasceu: escopo que falta deve ser visível na
+própria suíte.
+
+Nenhum cenário do elo é destacável para a 2a. Todos passam por `fecharCompra`,
+e o cenário de falha ("nenhum item muda de status, nenhuma despesa é
+registrada") só significa algo se a atomicidade existir.
+
 **Entregável**: `comprei tudo, 180` fecha a lista e lança a despesa. É a
 demonstração que vende o produto.
+
+## Etapa 2b — Tarefas e agenda (~0,5 semana)
+
+Executada depois da Etapa 3. Começa **escrevendo a `.feature` de tarefas**, que
+não existe — é a única feature dos três domínios ainda não escrita, e sem ela
+não há código a fazer (`CLAUDE.md`: comportamento vira `.feature` antes de
+virar código).
+
+Ao escrevê-la, decidir ou excluir explicitamente a [decisão aberta #12](docs/DECISOES-ABERTAS.md)
+(recorrência de tarefas — modelo de dados). Tarefa que repete toda semana é
+outro problema de modelagem, não um campo a mais.
+
+Os cenários dela **não** levam `@etapa2`: essa tag é o portão da 2a e ficaria
+vermelha por escopo que ainda não começou. Tag própria, decidida ao escrever.
+
+**Entregável**: `lembrar de pagar o IPTU sexta` vira tarefa e a consulta de
+pendências responde por chat. Com isso os seis fluxos do glossário estão
+completos.
 
 ## Etapa 4 — PWA Vue (~2-3 semanas)
 

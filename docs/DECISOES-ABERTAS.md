@@ -32,7 +32,7 @@ Ordenado por custo de errar.
 
 | # | Questão | Nota |
 |---|---|---|
-| 12 | Recorrência de tarefas — modelo de dados | — |
+| 12 | Recorrência de tarefas — modelo de dados | Deixou de não bloquear nada em 2026-09-05, ao a Etapa 2b passar a começar pela `.feature` de tarefas: precisa ser decidida **ou excluída explicitamente do escopo** ao escrevê-la. Tarefa que repete toda semana é outro problema de modelagem, não um campo a mais — e cenário Gherkin escrito sem essa decisão vira premissa silenciosa. |
 | 13 | Anexo de foto de cupom fiscal no chat | Ideia registrada em 2026-08-31: LLM com visão lê a foto e extrai os dados do lançamento (valor, categoria, itens), em vez de só anexar a imagem ao lançamento manual. Fica fora da ADR-0004 (que cobre só entrada por texto/function calling) — mereceria ADR própria: pipeline de visão, custo por chamada, e onde a imagem é armazenada (LGPD). Não é caminho crítico do elo lista→despesa. Verificado em 2026-08-31: Mistral (já provedor escolhido para Etapas 1-5, [ADR-0009](01-adr/0009-mistral-ai-como-provedor-de-llm-na-validacao.md)) também tem visão computacional no tier gratuito — reduz o custo de validar esta ideia se e quando ela for decidida, sem exigir segundo provedor. |
 | 14 | Orçamento por categoria e alertas | — |
 | 15 | Múltiplas listas de compras simultâneas (mercado, farmácia, feira) | — |
