@@ -17,8 +17,8 @@ Aqui ficam só o mapa e o estado.
 | Feature | Cobre | Cenários | Etapa |
 |---|---|---|---|
 | [`financas-lancamento-por-chat`](features/financas-lancamento-por-chat.feature) | Despesa por mensagem curta: categoria reconhecida, variações de escrita, categoria inexistente, ambiguidade, valor ausente, descrição, desfazer, reentrega, número não vinculado | 11 | 4 `@etapa1`, 7 `@etapa2` |
-| [`mercado-lista-de-compras`](features/mercado-lista-de-compras.feature) | Lista compartilhada: adicionar por linguagem natural, quantidade, item repetido, "o que está faltando?", marcar comprado, reentrega | 9 | sem tag |
-| [`elo-fechamento-de-compra`](features/elo-fechamento-de-compra.feature) | O elo lista→despesa: fechar tudo ou em partes, falha atômica, desfazer dos dois lados, fechar sem lista ativa, reentrega | 9 | sem tag |
+| [`mercado-lista-de-compras`](features/mercado-lista-de-compras.feature) | Lista compartilhada: adicionar por linguagem natural, quantidade, item repetido, "o que está faltando?", marcar comprado, reentrega | 9 | 9 `@etapa2` |
+| [`elo-fechamento-de-compra`](features/elo-fechamento-de-compra.feature) | O elo lista→despesa: fechar tudo ou em partes, falha atômica, desfazer dos dois lados, fechar sem lista ativa, reentrega | 9 | 9 `@etapa3` |
 | [`vinculo-de-identidade`](features/vinculo-de-identidade.feature) | Onboarding: primeiro contato cria a própria família; convite entra em família existente; telefone errado, convite expirado, convite reusado, pessoa em duas famílias | 10 | 9 `@etapa1`, 1 `@etapa2` |
 
 **Não escrita**: tarefas/agenda. Fica pra quando a etapa dela chegar.
@@ -29,14 +29,22 @@ escopo tira a razão de existir do produto.
 
 ## Sobre as tags
 
-`@etapa1` e `@etapa2` marcam o que cada etapa do ROADMAP entrega, e é por elas
-que `Etapa1AcceptanceTest` e `Etapa2AcceptanceTest` selecionam o que rodar.
+As tags marcam a qual etapa do ROADMAP cada cenário pertence, e é por elas que
+os testes de aceitação selecionam o que rodar.
 
-Só `financas-lancamento-por-chat` e `vinculo-de-identidade` têm tags — as
-features de mercado e do elo não têm nenhuma. Não é esquecimento sem
-consequência: enquanto ficarem assim, os cenários delas não são selecionáveis
-por etapa, e a Etapa 2 vai precisar decidir isso antes de tirar o `@Disabled`
-do `Etapa2AcceptanceTest`. Registrado aqui como observação, não como decisão.
+Onde a tag fica depende do arquivo. `financas-lancamento-por-chat` e
+`vinculo-de-identidade` são mistos, então cada cenário carrega a própria tag.
+`mercado-lista-de-compras` e `elo-fechamento-de-compra` são inteiros de uma
+etapa só, então a tag está na linha `Funcionalidade:` e é herdada — uma linha
+em vez de nove repetidas.
+
+Nenhum cenário do elo é destacável para a Etapa 2: todos dependem de
+`fecharCompra` atômico, e o cenário de falha ("não deixa a lista fechada") só
+faz sentido se a atomicidade existir. Fatiar o elo entregaria a metade que não
+prova nada.
+
+`@etapa3` só passa a rodar quando existir um `Etapa3AcceptanceTest` — a tag
+sozinha não dá cobertura, apenas torna os cenários selecionáveis.
 
 ## Onde ler o resto
 

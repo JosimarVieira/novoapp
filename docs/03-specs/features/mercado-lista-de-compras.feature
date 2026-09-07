@@ -1,4 +1,9 @@
 # language: pt
+
+# Tag no nivel da Funcionalidade: os nove cenarios daqui sao todos da mesma
+# etapa, entao a tag e herdada em vez de repetida linha a linha. Diferente de
+# financas e vinculo, que sao mistos e precisam de tag por cenario.
+@etapa2
 Funcionalidade: Lista de compras compartilhada por chat
   Como membro de um household
   Quero avisar o que está faltando e consultar a lista pelo chat

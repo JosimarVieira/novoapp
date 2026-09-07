@@ -1,4 +1,9 @@
 # language: pt
+
+# Tag no nivel da Funcionalidade, herdada pelos nove cenarios. Todos dependem
+# de `fecharCompra` atomico, que e a Etapa 3 -- nenhum deles e destacavel para
+# a Etapa 2 sem quebrar a atomicidade que o cenario de falha exige.
+@etapa3
 Funcionalidade: Fechamento de compra gerando lançamento
   Como membro de um household
   Quero fechar a lista e registrar o gasto em uma única mensagem
