@@ -43,6 +43,51 @@ Funcionalidade: Lançamento de despesa por chat
     Então a categoria de despesa "Pet shop" é criada no household "Silva"
     E uma despesa de R$ 80,00 é registrada nessa categoria
 
+  # Os três cenários abaixo cobrem a ADR-0026 (hierarquia na criação de
+  # categoria por chat). A extração continua sem inventar hierarquia --
+  # "restaurante eu e esposa 90" só sugere "Restaurante", nunca supõe
+  # "Alimentação" sozinho; é a correção da pessoa que traz o pai.
+
+  @etapa2
+  Cenário: Categoria sugerida vira subcategoria por correção livre
+    Dado que o household "Silva" também tem a categoria de despesa "Alimentação"
+    Quando "Ana" envia "restaurante eu e esposa 90"
+    Então nenhuma despesa é registrada ainda
+    E "Ana" recebe uma única pergunta oferecendo criar a categoria "Restaurante"
+    Quando "Ana" responde "restaurante dentro de alimentação"
+    Então a categoria de despesa "Restaurante" é criada no household "Silva" como subcategoria de "Alimentação"
+    E uma despesa de R$ 90,00 é registrada nessa categoria
+
+  @etapa2
+  Cenário: Correção livre cria categoria-pai e subcategoria quando nenhuma das duas existe
+    Quando "Ana" envia "restaurante eu e esposa 90"
+    Então nenhuma despesa é registrada ainda
+    E "Ana" recebe uma única pergunta oferecendo criar a categoria "Restaurante"
+    Quando "Ana" responde "restaurante dentro de alimentação"
+    Então a categoria de despesa "Alimentação" é criada no household "Silva" como categoria raiz
+    E a categoria de despesa "Restaurante" é criada como subcategoria de "Alimentação"
+    E uma despesa de R$ 90,00 é registrada na categoria "Restaurante"
+
+  @etapa2
+  Cenário: Correção livre não pode criar subcategoria de subcategoria
+    Dado que o household "Silva" tem a categoria "Alimentação" com a subcategoria "Restaurante"
+    Quando "Ana" envia "rodízio de pizza 40"
+    Então "Ana" recebe uma única pergunta oferecendo criar a categoria "Rodízio de pizza"
+    Quando "Ana" responde "rodízio de pizza dentro de restaurante"
+    Então nenhuma categoria é criada
+    E "Ana" recebe uma pergunta pedindo a categoria correta, não um erro genérico
+
+  @etapa2
+  Cenário: Household novo sem nenhuma categoria já oferece criar categoria na primeira mensagem
+    Dado que existe o household "Costa", sem nenhuma categoria de despesa
+    E que "Bruno" é membro do household "Costa" com o Telegram vinculado
+    Quando "Bruno" envia "mercado 50"
+    Então nenhuma despesa é registrada ainda
+    E "Bruno" recebe uma única pergunta oferecendo criar a categoria "Mercado"
+    Quando "Bruno" responde "sim"
+    Então a categoria de despesa "Mercado" é criada no household "Costa"
+    E uma despesa de R$ 50,00 é registrada nessa categoria
+
   @etapa2
   Cenário: Mensagem ambígua entre duas categorias
     Dado que o household "Silva" também tem a categoria de despesa "Mercado livre"
@@ -93,6 +138,19 @@ Funcionalidade: Lançamento de despesa por chat
     Então a despesa é estornada
     E a despesa continua visível no histórico marcada como estornada
     E "Ana" recebe a confirmação do estorno
+
+  # ADR-0025: pendência aberta tem precedência absoluta sobre estorno.
+  # "Desfazer" só reabre o fluxo de estorno quando não há pergunta esperando
+  # resposta.
+
+  @etapa2
+  Cenário: Desfazer resolve pendência aberta em vez de estornar lançamento
+    Dado que "Ana" registrou uma despesa de R$ 50,00 em "Mercado" há 2 minutos
+    E que "Ana" tem uma pergunta pendente oferecendo criar a categoria "Pet shop"
+    Quando "Ana" envia "desfazer"
+    Então a pergunta pendente é cancelada
+    E a despesa de R$ 50,00 em "Mercado" continua sem estorno
+    E "Ana" recebe a confirmação de que a pergunta foi cancelada, não de um estorno
 
   @etapa1
   Cenário: Reentrega da mesma mensagem pelo provedor
