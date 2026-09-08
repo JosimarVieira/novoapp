@@ -15,8 +15,14 @@ import java.util.UUID;
 /**
  * Classificacao de lancamento, criada pelo household (glossario).
  *
- * <p>Household novo nasce sem nenhuma (ADR-0013). Criar categoria por chat e
- * Etapa 2 -- por isso nada nesta etapa escreve nesta tabela.
+ * <p>Household novo nasce sem nenhuma (ADR-0013): toda categoria que existe foi
+ * criada porque a familia precisou dela. Quem escreve aqui a partir do chat e
+ * {@link com.novoapp.finance.CategoryService}, depois de a pessoa confirmar a
+ * criacao (ADR-0024) ou corrigir a hierarquia (ADR-0026).
+ *
+ * <p>{@link #parentCategoryId} tem um nivel so, e o enforcement e na camada de
+ * servico e nao no banco (ADR-0016): um CHECK de auto-relacionamento nao impede
+ * cadeia de tres niveis sozinho.
  */
 @Entity
 @Table(name = "category")

@@ -64,11 +64,31 @@ O custo da divisão, declarado: os seis fluxos do glossário deixam de sair
 juntos. Quem olhar o produto entre a 3 e a 2b vê finanças e mercado completos e
 tarefas ausente.
 
-## Etapa 2a — Mercado, ambiguidade e convite por chat (~1,5 semanas)
+## Etapa 2a — Mercado, ambiguidade e convite por chat (fechada em 2026-09-07)
 
-Começa por tirar o `@Disabled` de `Etapa2AcceptanceTest`: os 22 cenários
-`@etapa2` já estão escritos e já falham por passo indefinido, que é o estado
-correto (recontado em 2026-09-07 ao fechar as ADRs 0024-0026, que acrescentaram
+Entregue. O relato completo — o que foi construído, o que ficou de fora, as
+lacunas conhecidas dentro do que foi entregue, as decisões tomadas ao
+implementar e as três contradições entre documentos aceitos que apareceram no
+caminho — está em
+[`docs/05-entregas/etapa-2a-mercado-ambiguidade-e-convite.md`](docs/05-entregas/etapa-2a-mercado-ambiguidade-e-convite.md).
+
+Nenhuma ADR nova foi necessária: as 0024-0026, aceitas horas antes de a etapa
+começar, cobriram o que precisava de decisão. As demais decisões ficaram
+registradas nos SDDs de módulo, incluindo o [SDD de `shopping`](docs/02-arquitetura/sdd-modulo-shopping.md),
+escrito nesta etapa porque o módulo não tinha nenhum.
+
+**Três lacunas herdadas da Etapa 1 continuam abertas** — botão nativo de
+compartilhar contato, retry com backoff na falha de LLM, e o comando de trocar o
+household ativo ([ADR-0007](docs/01-adr/0007-pessoa-em-multiplos-households.md)).
+Nenhuma delas tem cenário `@etapa2`, e nenhuma foi fechada aqui.
+
+O plano abaixo é o que foi escrito antes de a etapa começar, mantido como
+registro. O diagnóstico central dele se confirmou na prática: a espinha era
+`PendingAction`, e depois que ela existiu mercado inteiro saiu quase de graça.
+
+Começou por tirar o `@Disabled` de `Etapa2AcceptanceTest`: os 22 cenários
+`@etapa2` já estavam escritos e falhavam por passo indefinido, que é o estado
+correto (recontados em 2026-09-07 ao fechar as ADRs 0024-0026, que acrescentaram
 cinco cenários novos aos 17 que já existiam).
 
 **A espinha é `PendingAction` e a política de confiança média da [ADR-0004](docs/01-adr/0004-interpretacao-por-function-calling-com-politica-de-confianca.md)**, não
@@ -79,11 +99,12 @@ ausente, item mencionado que não está na lista, e (já na Etapa 3) fechar comp
 sem informar valor. Construir mercado antes do mecanismo significa construí-lo
 duas vezes.
 
-A primeira migration da etapa é a tabela `pending_action`. Ela está modelada em
-[`modelo-de-dados.md`](docs/02-arquitetura/modelo-de-dados.md) e **não existe no schema** — a `V1__initial_schema.sql`
-termina em `transaction`. O TTL é a [decisão aberta #8](docs/DECISOES-ABERTAS.md) (sugerido 10 minutos,
-sem base): entra como config global do app, provisória e explícita, nunca como
-constante escondida no código.
+A primeira migration da etapa foi a tabela `pending_action` (`V2`), seguida de
+`shopping_list` e `list_item` (`V3`). O TTL é a
+[decisão aberta #8](docs/DECISOES-ABERTAS.md) (sugerido 10 minutos, sem base):
+entrou como config global do app, provisória e explícita, nunca como constante
+escondida no código — junto com os dois limiares de confiança
+([decisão aberta #7](docs/DECISOES-ABERTAS.md)), pelo mesmo motivo.
 
 Criação de categoria por chat ganhou desenho próprio depois da Etapa 1 (ADRs
 [0024](docs/01-adr/0024-categoria-sugerida-por-texto-livre.md),
@@ -106,6 +127,7 @@ inteiro (qualquer membro, [ADR-0012](docs/01-adr/0012-edicao-de-lancamento-entre
 Herda três lacunas conhecidas da Etapa 1, listadas na entrega dela: botão
 nativo de compartilhar contato, retry com backoff na falha de LLM, e o comando
 de trocar o household ativo ([ADR-0007](docs/01-adr/0007-pessoa-em-multiplos-households.md)).
+— Nenhuma das três foi fechada; seguem abertas, como dito no topo desta seção.
 
 Entra também a descrição do lançamento ([ADR-0023](docs/01-adr/0023-descricao-de-lancamento-extraida-pelo-llm.md), aceita em 2026-09-05,
 a partir do primeiro uso real): a tool `registrarDespesa` ganha o parâmetro
@@ -117,14 +139,20 @@ Existem `ExpenseByChatSteps` e `IdentityLinkSteps`. O glue de mercado é arquivo
 novo, não adaptação. O glue dos cinco cenários novos de categoria/hierarquia/
 desfazer (ADRs 0024-0026) também é novo — nenhum reaproveita passo existente
 de `ExpenseByChatSteps` sem revisão, porque nenhum desses fluxos existia
-quando esses steps foram escritos.
+quando esses steps foram escritos. — Cumprido: `ShoppingListSteps` é arquivo
+próprio, e os passos de finanças que foram revisados mudaram de fato
+(`uma despesa é registrada` passou a ignorar lançamento estornado, que antes não
+existia).
 
 **Entregável**: `acabou o arroz` entra na lista, `o que está faltando?`
 responde, `pet shop 80` oferece criar a categoria e grava depois do `sim`,
 `restaurante eu e esposa 90` corrigido para "dentro de alimentação" cria a
 hierarquia certa mesmo quando nada existe ainda, e `desfazer` com pergunta
 pendente cancela a pergunta em vez de estornar. Os 22 cenários `@etapa2`
-verdes.
+verdes. — **Cumprido**, sem ressalva de escopo. Semear categoria e inserir
+convite por SQL, os dois passos manuais que a Etapa 1 documentava em
+[`server/README.md`](server/README.md), deixaram de existir: são exatamente os
+dois fluxos que esta etapa entregou.
 
 ## Etapa 3 — O elo (~1 semana)
 

@@ -51,14 +51,58 @@ public class Fixtures {
     }
 
     /**
-     * Categorias na mao: household novo nasce sem nenhuma (ADR-0013) e criar
-     * categoria por chat e cenario @etapa2. E o mesmo caminho que o README
-     * documenta pra validacao real na Etapa 1.
+     * Categoria plantada na mao, pra montar o estado inicial de um cenario --
+     * household novo nasce sem nenhuma (ADR-0013).
+     *
+     * <p>Nao e atalho pro fluxo de criacao por chat: esse fluxo existe desde a
+     * Etapa 2a e tem cenarios proprios, que deliberadamente <b>nao</b> usam esta
+     * fixture. Semear aqui o que o cenario quer testar seria circular.
      */
     public UUID insertExpenseCategory(UUID householdId, String name) {
         return insertReturningId(
                 "INSERT INTO category (household_id, name, kind) VALUES (?, ?, 'EXPENSE') RETURNING id",
                 householdId, name);
+    }
+
+    /** Subcategoria: so um nivel (ADR-0016). */
+    public UUID insertExpenseSubcategory(UUID householdId, UUID parentCategoryId, String name) {
+        return insertReturningId("""
+                INSERT INTO category (household_id, parent_category_id, name, kind)
+                VALUES (?, ?, ?, 'EXPENSE') RETURNING id""", householdId, parentCategoryId, name);
+    }
+
+    /**
+     * Lancamento ja gravado, pra montar o estado inicial de um cenario de
+     * estorno sem passar pelo chat. O instante e explicito porque o alvo do
+     * <code>desfazer</code> e "a mais recente" (ADR-0025).
+     */
+    public UUID insertExpense(UUID householdId, UUID memberId, UUID categoryId, UUID accountId,
+                              long amountCents, Instant createdAt) {
+        return insertReturningId("""
+                INSERT INTO transaction
+                    (household_id, account_id, category_id, kind, amount_cents, occurred_on,
+                     created_by_member_id, source, created_at)
+                VALUES (?, ?, ?, 'EXPENSE', ?, ?, ?, 'CHAT', ?) RETURNING id""",
+                householdId, accountId, categoryId, amountCents,
+                java.sql.Date.valueOf(java.time.LocalDate.now()), memberId,
+                java.sql.Timestamp.from(createdAt));
+    }
+
+    public UUID insertShoppingList(UUID householdId) {
+        return insertReturningId("""
+                INSERT INTO shopping_list (household_id, name, status)
+                VALUES (?, 'Compras', 'ACTIVE') RETURNING id""", householdId);
+    }
+
+    public UUID insertListItem(UUID householdId, UUID shoppingListId, String name,
+                               String status, UUID requestedByMemberId) {
+        return insertReturningId("""
+                INSERT INTO list_item (household_id, shopping_list_id, name, status,
+                                       requested_by_member_id, purchased_by_member_id, purchased_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id""",
+                householdId, shoppingListId, name, status, requestedByMemberId,
+                "PURCHASED".equals(status) ? requestedByMemberId : null,
+                "PURCHASED".equals(status) ? java.sql.Timestamp.from(Instant.now()) : null);
     }
 
     public UUID insertWallet(UUID householdId) {
@@ -117,8 +161,9 @@ public class Fixtures {
     /** Deixa o banco limpo entre cenarios, sem recriar o container. */
     public void truncateAll() {
         execute("""
-                TRUNCATE transaction, category, account, inbound_message, onboarding_session,
-                         household_invite, channel_identity, household_membership, member, household
+                TRUNCATE pending_action, list_item, shopping_list, transaction, category, account,
+                         inbound_message, onboarding_session, household_invite, channel_identity,
+                         household_membership, member, household
                 RESTART IDENTITY CASCADE""");
     }
 

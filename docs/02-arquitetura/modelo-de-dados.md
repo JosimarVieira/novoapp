@@ -1,7 +1,7 @@
 ---
 tipo: arquitetura
 status: escrito
-atualizado_em: 2026-09-05
+atualizado_em: 2026-09-07
 adrs:
   - ADR-0003
   - ADR-0005
@@ -10,12 +10,17 @@ adrs:
   - ADR-0011
   - ADR-0012
   - ADR-0014
+  - ADR-0015
   - ADR-0016
   - ADR-0017
+  - ADR-0018
   - ADR-0019
   - ADR-0020
   - ADR-0021
   - ADR-0022
+  - ADR-0024
+  - ADR-0025
+  - ADR-0026
 ---
 
 # Modelo de dados
@@ -98,6 +103,7 @@ erDiagram
         text phone_number "nullable, ADR-0020"
         text email "nullable, unico, ADR-0021"
         text password_hash "nullable, ADR-0021"
+        text preferred_locale "default pt-BR, ADR-0015"
     }
     HOUSEHOLD_MEMBERSHIP {
         uuid id PK
@@ -223,7 +229,8 @@ member
   id, name, created_at,
   phone_number (nullable),  -- capturado no aceite de convite ou onboarding, ADR-0020
   email (nullable, unico quando preenchido),      -- ADR-0021
-  password_hash (nullable)                        -- ADR-0021, bcrypt
+  password_hash (nullable),                       -- ADR-0021, bcrypt
+  preferred_locale                                -- NOT NULL, default 'pt-BR', ADR-0015
 
 household_membership
   id, household_id, member_id, role (OWNER|MEMBER), created_at,
@@ -301,10 +308,33 @@ esta tabela precisa de tratamento explícito na política de RLS.
 pending_action
   id, household_id, member_id, channel_identity_id,
   intent_json, question_asked, options_json,
-  expires_at, resolved_at, resolution (CONFIRMED|REJECTED|EXPIRED)
+  created_at, expires_at, resolved_at, resolution (CONFIRMED|REJECTED|EXPIRED)
 ```
 
-TTL sugerido de 10 minutos, a calibrar na Etapa 5.
+TTL sugerido de 10 minutos, a calibrar na Etapa 5 — config global do app
+(`novoapp.conversation.pending-action.ttl`), nunca constante no código
+([decisão aberta #8](../DECISOES-ABERTAS.md)).
+
+Três coisas fixadas ao criar a tabela na Etapa 2a, sem mudança do schema acima:
+
+- **`resolution` fica nula enquanto ninguém resolveu, e `expires_at` no passado
+  não muda isso sozinho.** Nenhum job, nenhuma trigger — a
+  [ADR-0018](../01-adr/0018-central-de-pendencias.md) descartou explicitamente
+  essa alternativa. O prazo muda só o caminho de resolução: dentro dele,
+  curto-circuito no chat; fora dele, a central de pendências do app.
+  Consequência: `EXPIRED` existe no `CHECK` e **nunca é gravado** pelo código de
+  hoje, reservado para uma desistência explícita registrada pela web.
+- **O tipo da pendência vive dentro de `intent_json`, no campo `type`.** A
+  [ADR-0026](../01-adr/0026-hierarquia-na-criacao-de-categoria-por-chat.md) abre
+  uma exceção de resolução só para a pendência de criação de categoria, e o
+  código precisa distinguir os tipos — coluna nova contrariaria a ADR-0018, que
+  decide que a central de pendências se sustenta sem mudança de schema. O
+  porquê completo está em `sdd-modulo-conversation.md`.
+- **`options_json` guarda só os rótulos**, que é o que a tela da Etapa 4 mostra;
+  os ids das opções ficam em `intent_json`, que é onde a execução os procura.
+  Pendência de sim/não e pendência de valor ausente têm as duas
+  `options_json` nulo — e é por isso que "50" é lido como cinquenta reais, e não
+  como "opção 50".
 
 ## Finanças
 
@@ -399,10 +429,11 @@ shopping_list
 
 list_item
   id, household_id, shopping_list_id, name,
-  quantity, unit,
+  quantity,                         -- numeric: "meio quilo de queijo" e tao comum quanto "2 kg"
+  unit,
   status (PENDING|PURCHASED|REMOVED),
   requested_by_member_id, purchased_by_member_id, purchased_at,
-  source_message_id
+  source_message_id                 -- rastreia o item ate a mensagem que o pediu
 
 list_checkout                     -- o elo
   id, household_id, shopping_list_id,
@@ -449,16 +480,35 @@ só entra depois que a Etapa 5 mostrar que tarefas são usadas de verdade.
 
 ## O que existe no banco hoje
 
-A Etapa 1 criou, em `server/src/main/resources/db/migration/V1__initial_schema.sql`:
-`household`, `member`, `household_membership`, `channel_identity`,
-`household_invite`, `onboarding_session`, `inbound_message`, `account`,
-`category`, `transaction` — todas com RLS ativa e `FORCE`, exceto `member`
-([ADR-0007](../01-adr/0007-pessoa-em-multiplos-households.md): não tem `household_id` em que uma policy possa se apoiar).
+`server/src/main/resources/db/migration/`, três migrations:
 
-As demais tabelas deste documento — `pending_action`, `invoice`,
-`transaction_edit`, `financial_goal`, `goal_transaction_link`, `shopping_list`,
-`list_item`, `list_checkout`, `task` — estão modeladas aqui e **não existem no
-schema**: entram na etapa que precisar delas. O schema da Etapa 1 foi desenhado
-para não conflitar com nenhuma (`transaction` já carrega `invoice_id`,
-`installment_*` e `split_group_id` sem uso, justamente para que a fatura não
-exija alterar a tabela depois).
+- **`V1__initial_schema.sql`** (Etapa 1): `household`, `member`,
+  `household_membership`, `channel_identity`, `household_invite`,
+  `onboarding_session`, `inbound_message`, `account`, `category`,
+  `transaction`.
+- **`V2__pending_action.sql`** (Etapa 2a): `pending_action`.
+- **`V3__shopping_list.sql`** (Etapa 2a): `shopping_list`, `list_item`.
+- **`V4__member_preferred_locale.sql`** (2026-09-08): `member.preferred_locale`.
+  Era para ter entrado na Etapa 1 — a [ADR-0015](../01-adr/0015-internacionalizacao.md)
+  vale "da Etapa 1 em diante" e ficou fora de todos os prompts de etapa até a
+  auditoria da 2a encontrá-la.
+
+Todas com RLS ativa e `FORCE`, exceto `member`
+([ADR-0007](../01-adr/0007-pessoa-em-multiplos-households.md): não tem
+`household_id` em que uma policy possa se apoiar).
+
+Dois índices únicos parciais que a Etapa 2a acrescentou, e que são invariante de
+estrutura e não otimização: `shopping_list (household_id) WHERE status = 'ACTIVE'`
+("um household tem no máximo uma lista ativa por vez", glossário) e
+`list_item (shopping_list_id, lower(name)) WHERE status = 'PENDING'` (duas
+pessoas avisando que acabou o arroz não viram dois arrozes pendentes — e o
+parcial permite que ele volte a faltar depois de comprado).
+
+As demais tabelas deste documento — `invoice`, `transaction_edit`,
+`financial_goal`, `goal_transaction_link`, `list_checkout`, `task` — estão
+modeladas aqui e **não existem no schema**: entram na etapa que precisar delas.
+`list_checkout` é o elo, Etapa 3; criá-la antes do comportamento que a usa
+deixaria schema morto no banco. O schema da Etapa 1 foi desenhado para não
+conflitar com nenhuma (`transaction` já carrega `invoice_id`, `installment_*` e
+`split_group_id` sem uso, justamente para que a fatura não exija alterar a
+tabela depois).

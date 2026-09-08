@@ -69,7 +69,7 @@ public class OnboardingService {
             // Primeira mensagem de um numero desconhecido, seja ela "/start",
             // "mercado 50" ou "quero entrar na familia do Silva".
             remember(contact, OnboardingState.AWAITING_CREATE_CONFIRMATION, null);
-            reply(contact, OnboardingMessages.WELCOME);
+            reply(contact, OnboardingMessages.welcome());
             return;
         }
 
@@ -87,21 +87,21 @@ public class OnboardingService {
     private void confirmCreation(IncomingContact contact, OnboardingSession session) {
         if (Answers.isAffirmative(contact.text())) {
             advance(session, OnboardingState.AWAITING_HOUSEHOLD_NAME);
-            reply(contact, OnboardingMessages.ASK_HOUSEHOLD_NAME);
+            reply(contact, OnboardingMessages.askHouseholdName());
             return;
         }
         if (Answers.isNegative(contact.text())) {
             sessions.close(contact.channel(), contact.externalId());
-            reply(contact, OnboardingMessages.DECLINED);
+            reply(contact, OnboardingMessages.declined());
             return;
         }
-        reply(contact, OnboardingMessages.WELCOME);
+        reply(contact, OnboardingMessages.welcome());
     }
 
     private void createHousehold(IncomingContact contact, OnboardingSession session) {
         String householdName = contact.text().trim();
         if (householdName.isEmpty()) {
-            reply(contact, OnboardingMessages.ASK_HOUSEHOLD_NAME);
+            reply(contact, OnboardingMessages.askHouseholdName());
             return;
         }
         Household household = selfService.create(contact, householdName);
@@ -112,11 +112,11 @@ public class OnboardingService {
     private void chooseSetupChannel(IncomingContact contact, OnboardingSession session) {
         if (Answers.prefersApp(contact.text())) {
             // A Etapa 4 e que entrega o PWA (ADR-0021). Ate la, so o chat.
-            reply(contact, OnboardingMessages.APP_NOT_AVAILABLE_YET);
+            reply(contact, OnboardingMessages.appNotAvailableYet());
             return;
         }
         sessions.close(contact.channel(), contact.externalId());
-        reply(contact, OnboardingMessages.CONTINUING_BY_CHAT);
+        reply(contact, OnboardingMessages.continuingByChat());
     }
 
     /** Extrai o token do <code>/start &lt;token&gt;</code> do link de convite. */

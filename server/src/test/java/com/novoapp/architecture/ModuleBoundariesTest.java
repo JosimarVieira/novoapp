@@ -40,18 +40,27 @@ class ModuleBoundariesTest {
             .resideInAnyPackage(CHANNEL, NLU, CONVERSATION, FINANCE, SHOPPING, TASKS)
             .because("identity e o modulo mais de baixo: so e importado, nunca importa (sdd-modulo-identity.md)");
 
+    /**
+     * A aresta pra <code>shopping</code> entrou na Etapa 2a, pelo mesmo motivo
+     * que a de <code>finance</code> entrou na Etapa 1: a ADR-0004 manda dar ao
+     * modelo "as categorias e listas reais do household como contexto", e sem os
+     * itens pendentes o modelo nao casa "comprei o arroz" com o item da lista.
+     * Continua sendo so leitura -- <code>nlu</code> nunca persiste dado de
+     * dominio (sdd-visao-geral.md).
+     */
     @ArchTest
-    static final ArchRule nluOnlyReadsFinance = noClasses()
+    static final ArchRule nluOnlyReadsFinanceAndShopping = noClasses()
             .that().resideInAPackage(NLU)
             .should().dependOnClassesThat()
-            .resideInAnyPackage(CHANNEL, CONVERSATION, IDENTITY, SHOPPING, TASKS)
-            .because("nlu so le categoria em finance, e nada mais (sdd-modulo-nlu.md)");
+            .resideInAnyPackage(CHANNEL, CONVERSATION, IDENTITY, TASKS)
+            .because("nlu so le contexto de dominio em finance e shopping, e nada mais (sdd-modulo-nlu.md)");
 
     @ArchTest
     static final ArchRule conversationDoesNotReachTheChannel = noClasses()
             .that().resideInAPackage(CONVERSATION)
-            .should().dependOnClassesThat().resideInAnyPackage(CHANNEL, SHOPPING, TASKS)
-            .because("conversation orquestra nlu, finance e identity -- nada alem disso (sdd-modulo-conversation.md)");
+            .should().dependOnClassesThat().resideInAnyPackage(CHANNEL, TASKS)
+            .because("conversation orquestra nlu, finance, shopping e identity -- nada alem disso "
+                    + "(sdd-modulo-conversation.md)");
 
     @ArchTest
     static final ArchRule financeDependsOnlyOnIdentity = noClasses()

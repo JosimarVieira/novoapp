@@ -25,8 +25,8 @@ Ordem de leitura para quem chega agora:
 | ADRs | Índice vivo em [`adr.base`](adr.base) (Obsidian). Fora do Obsidian, navegue em [`01-adr/`](01-adr/) |
 | Modelo de dados | Escrito, cobre Etapas 1-3, com diagrama Mermaid |
 | SDD visão geral | Escrito |
-| SDD por módulo | Parcial — os 5 que a Etapa 1 toca estão escritos: `channel`, `identity`, `nlu`, `conversation`, `finance` (cada um com uma seção "Escopo desta versão" marcando o que fica pra Etapa 2), mais `tenancy` (pacote técnico, não módulo de domínio). `shopping`/`tasks` ficam pra quando a etapa deles chegar |
-| Entregas | Etapa 1 escrita. Índice vivo em [`entrega.base`](entrega.base) (Obsidian) |
+| SDD por módulo | Parcial — os 6 módulos com código estão escritos: `channel`, `identity`, `nlu`, `conversation`, `finance` e `shopping` (cada um com uma seção "Escopo desta versão" marcando o que fica pra frente), mais `tenancy` (pacote técnico, não módulo de domínio). `tasks` fica pra Etapa 2b |
+| Entregas | Etapas 1 e 2a escritas. Índice vivo em [`entrega.base`](entrega.base) (Obsidian) |
 | Feature: finanças | Escrita |
 | Feature: mercado | Escrita |
 | Feature: elo | Escrita |

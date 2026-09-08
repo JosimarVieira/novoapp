@@ -1,6 +1,11 @@
 package com.novoapp.identity.onboarding;
 
+import com.novoapp.common.i18n.MessageKey;
+import com.novoapp.common.i18n.Messages;
+
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Todo texto do onboarding, num lugar so.
@@ -10,8 +15,15 @@ import java.util.List;
  * <code>conversation</code>, porque nao ha interpretacao nenhuma envolvida --
  * sao as perguntas que o proprio modulo faz.
  *
- * <p>Sao os unicos textos deste modulo escritos com acentuacao completa: e o que
- * o usuario le. Comentario e SQL seguem sem acento por seguranca de encoding.
+ * <p><b>Nenhum texto e literal aqui</b> (ADR-0015): esta classe so escolhe qual
+ * mensagem cabe em cada passo, e o conteudo vem de {@link Messages}. Um teste
+ * trava isso -- literal longo neste arquivo quebra o build.
+ *
+ * <p>Quem esta no onboarding ainda nao tem <code>member</code>, logo nao tem
+ * <code>preferred_locale</code>: todo texto daqui sai em
+ * {@link Messages#DEFAULT}. Escolher idioma antes de existir pessoa exigiria
+ * perguntar o idioma como primeiro passo do onboarding, o que a ADR-0015 nao
+ * pede e nenhum cenario descreve.
  */
 public final class OnboardingMessages {
 
@@ -29,80 +41,77 @@ public final class OnboardingMessages {
      * caem aqui -- explica o produto, avisa que so se entra em familia existente
      * por convite, e oferece criar a propria.
      */
-    public static final String WELCOME = """
-            Oi! Por aqui você registra as despesas, a lista de mercado e as tarefas da sua família, \
-            sem precisar abrir aplicativo nenhum.
+    public static String welcome() {
+        return Messages.get(Messages.DEFAULT, MessageKey.ONBOARDING_WELCOME);
+    }
 
-            Para começar, seu número precisa estar vinculado a uma família. Entrar numa família que já \
-            existe só é possível por convite de quem já faz parte dela — peça o link para essa pessoa.
+    public static String declined() {
+        return Messages.get(Messages.DEFAULT, MessageKey.ONBOARDING_DECLINED);
+    }
 
-            Quer criar uma família nova? Responda sim ou não.""";
-
-    public static final String DECLINED = """
-            Tudo bem. Quando quiser criar a sua família, é só me dizer. Se alguém da sua família já usa \
-            o aplicativo, peça o link de convite para essa pessoa.""";
-
-    public static final String ASK_HOUSEHOLD_NAME =
-            "Como você quer chamar a sua família? Pode ser o sobrenome, por exemplo: Silva";
+    public static String askHouseholdName() {
+        return Messages.get(Messages.DEFAULT, MessageKey.ONBOARDING_ASK_HOUSEHOLD_NAME);
+    }
 
     public static String householdCreated(String householdName) {
-        return """
-                Pronto: a família "%s" foi criada e você é o responsável por ela.
-
-                Quer terminar a configuração por aqui mesmo, pelo chat, ou prefere pelo aplicativo?"""
-                .formatted(householdName);
+        return Messages.get(Messages.DEFAULT, MessageKey.ONBOARDING_HOUSEHOLD_CREATED, householdName);
     }
 
     /**
      * Cenario "Escolhe terminar configuracao no aplicativo, antes da Etapa 4
      * existir": o aplicativo web so chega na Etapa 4 do ROADMAP (ADR-0021).
      */
-    public static final String APP_NOT_AVAILABLE_YET = """
-            O aplicativo web ainda não está disponível nesta etapa — ele vem depois.
+    public static String appNotAvailableYet() {
+        return Messages.get(Messages.DEFAULT, MessageKey.ONBOARDING_APP_NOT_AVAILABLE);
+    }
 
-            Dá para fazer tudo por aqui pelo chat. Quer continuar a configuração por aqui?""";
-
-    public static final String CONTINUING_BY_CHAT =
-            "Combinado, seguimos por aqui. Para registrar uma despesa, é só mandar algo como: mercado 50";
+    public static String continuingByChat() {
+        return Messages.get(Messages.DEFAULT, MessageKey.ONBOARDING_CONTINUING_BY_CHAT);
+    }
 
     public static String inviteAskContact(String householdName) {
-        return """
-                Você foi convidado para a família "%s".
-
-                Para confirmar que o convite é seu, compartilhe o seu contato usando o botão do Telegram."""
-                .formatted(householdName);
+        return Messages.get(Messages.DEFAULT, MessageKey.INVITE_ASK_CONTACT, householdName);
     }
 
     public static String inviteAccepted(String householdName) {
-        return "Pronto: você agora faz parte da família \"%s\".".formatted(householdName);
+        return Messages.get(Messages.DEFAULT, MessageKey.INVITE_ACCEPTED, householdName);
     }
 
     /** ADR-0007: quem tem mais de um vinculo precisa saber como trocar o ativo. */
     public static String inviteAcceptedWithOtherHouseholds(String householdName, String activeHouseholdName) {
-        return """
-                Pronto: você agora faz parte da família "%s" também.
-
-                Suas mensagens continuam indo para a família "%s". Para trocar, diga: usar %s"""
-                .formatted(householdName, activeHouseholdName, householdName);
+        return Messages.get(Messages.DEFAULT, MessageKey.INVITE_ACCEPTED_OTHER_HOUSEHOLDS,
+                householdName, activeHouseholdName);
     }
 
-    public static final String INVITE_PHONE_MISMATCH =
-            "Este convite não é para o seu número. Confira com quem te convidou.";
+    public static String invitePhoneMismatch() {
+        return Messages.get(Messages.DEFAULT, MessageKey.INVITE_PHONE_MISMATCH);
+    }
 
-    public static final String INVITE_EXPIRED =
-            "Este convite expirou. Peça um convite novo para quem te convidou.";
+    public static String inviteExpired() {
+        return Messages.get(Messages.DEFAULT, MessageKey.INVITE_EXPIRED);
+    }
 
-    public static final String INVITE_ALREADY_USED = "Este convite já foi usado.";
+    public static String inviteAlreadyUsed() {
+        return Messages.get(Messages.DEFAULT, MessageKey.INVITE_ALREADY_USED);
+    }
 
-    public static final String INVITE_NOT_FOUND = "Não encontrei este convite.";
+    public static String inviteNotFound() {
+        return Messages.get(Messages.DEFAULT, MessageKey.INVITE_NOT_FOUND);
+    }
 
     /** ADR-0007: pessoa com mais de um household e nenhum ativo. */
     public static String chooseHousehold(List<String> householdNames) {
-        StringBuilder text = new StringBuilder(
-                "Você participa de mais de uma família. Para qual delas é esta mensagem?\n");
+        List<String> lines = new ArrayList<>();
         for (int index = 0; index < householdNames.size(); index++) {
-            text.append("\n").append(index + 1).append(") ").append(householdNames.get(index));
+            lines.add(Messages.get(Messages.DEFAULT, MessageKey.OPTION_LINE,
+                    index + 1, householdNames.get(index)));
         }
-        return text.toString();
+        return Messages.get(Messages.DEFAULT, MessageKey.ONBOARDING_CHOOSE_HOUSEHOLD,
+                String.join("\n", lines));
+    }
+
+    /** O idioma de todo texto de onboarding. Ver a nota de classe. */
+    public static Locale locale() {
+        return Messages.DEFAULT;
     }
 }

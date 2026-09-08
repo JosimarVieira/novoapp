@@ -2,7 +2,7 @@ package com.novoapp.channel;
 
 import com.novoapp.support.Fixtures;
 import com.novoapp.support.PostgresTestResource;
-import com.novoapp.support.StubExpenseExtractor;
+import com.novoapp.support.StubMessageInterpreter;
 import io.quarkus.test.common.TestResourceScope;
 import io.quarkus.test.common.WithTestResource;
 import io.quarkus.test.junit.QuarkusTest;
@@ -54,7 +54,7 @@ class WebhookResponseBudgetTest {
     Fixtures fixtures;
 
     @Inject
-    StubExpenseExtractor extractor;
+    StubMessageInterpreter extractor;
 
     @BeforeEach
     void setUp() {

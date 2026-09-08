@@ -63,10 +63,20 @@ public class Transaction extends PanacheEntityBase {
     @Column(name = "source_message_id")
     public UUID sourceMessageId;
 
-    /** Estorno em vez de delete (ADR-0012). Preenchido so na Etapa 2. */
+    /**
+     * Estorno em vez de delete (ADR-0012): o <code>desfazer</code> marca aqui e
+     * nunca apaga a linha. Historico auditavel importa em financas
+     * compartilhadas -- quando duas pessoas mexem no mesmo dado, "sumiu" e pior
+     * que "foi estornado por fulano".
+     */
     @Column(name = "reversed_at")
     public Instant reversedAt;
 
+    /**
+     * Sem uso ainda: o <code>desfazer</code> marca {@link #reversedAt} na propria
+     * linha, sem criar contralancamento (ADR-0025). Existe para o pagamento de
+     * fatura (ADR-0011), que sao dois lancamentos ligados.
+     */
     @Column(name = "reversal_of_id")
     public UUID reversalOfId;
 
