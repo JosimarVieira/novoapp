@@ -1,9 +1,12 @@
 package com.novoapp.support;
 
 import com.novoapp.common.tenancy.HouseholdScoped;
+import com.novoapp.conversation.repository.PendingActionRepository;
 import com.novoapp.finance.repository.AccountRepository;
 import com.novoapp.finance.repository.CategoryRepository;
 import com.novoapp.finance.repository.TransactionRepository;
+import com.novoapp.shopping.repository.ListItemRepository;
+import com.novoapp.shopping.repository.ShoppingListRepository;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
@@ -27,6 +30,15 @@ public class TenantProbe {
     AccountRepository accounts;
 
     @Inject
+    PendingActionRepository pendingActions;
+
+    @Inject
+    ShoppingListRepository shoppingLists;
+
+    @Inject
+    ListItemRepository listItems;
+
+    @Inject
     EntityManager entityManager;
 
     @Transactional
@@ -45,6 +57,24 @@ public class TenantProbe {
     @HouseholdScoped
     public long countAccounts() {
         return accounts.count();
+    }
+
+    @Transactional
+    @HouseholdScoped
+    public long countPendingActions() {
+        return pendingActions.count();
+    }
+
+    @Transactional
+    @HouseholdScoped
+    public long countShoppingLists() {
+        return shoppingLists.count();
+    }
+
+    @Transactional
+    @HouseholdScoped
+    public long countListItems() {
+        return listItems.count();
     }
 
     /**

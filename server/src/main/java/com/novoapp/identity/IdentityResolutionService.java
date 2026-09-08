@@ -98,6 +98,17 @@ public class IdentityResolutionService {
                         .toList());
     }
 
+    /**
+     * Idioma do membro (ADR-0015). Coluna com default no banco, entao nulo aqui
+     * so aconteceria por linha escrita fora do schema -- cair no padrao e melhor
+     * que estourar no meio de uma resposta.
+     */
+    private java.util.Locale localeOf(Member member) {
+        return member.preferredLocale == null || member.preferredLocale.isBlank()
+                ? com.novoapp.common.i18n.Messages.DEFAULT
+                : java.util.Locale.forLanguageTag(member.preferredLocale);
+    }
+
     /** <code>/start &lt;token&gt;</code>: chegada por link de convite (ADR-0020). */
     private boolean carriesInviteLink(String text) {
         if (text == null) {
@@ -111,6 +122,7 @@ public class IdentityResolutionService {
     private ResolvedContext resolved(ChannelIdentity identity, java.util.UUID householdId, boolean multiple) {
         Household household = households.findById(householdId);
         Member member = members.findById(identity.memberId);
-        return new ResolvedContext(householdId, household.name, member.id, member.name, multiple);
+        return new ResolvedContext(householdId, household.name, member.id, member.name, identity.id,
+                localeOf(member), multiple);
     }
 }

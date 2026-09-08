@@ -23,11 +23,10 @@ import java.util.Optional;
 /**
  * Aceite de convite (ADR-0020): so o telefone alvo entra, uso unico, 7 dias.
  *
- * <p>A criacao do convite pelo OWNER (comando no chat) nao entra na Etapa 1 --
- * parte de numero ja vinculado, e passaria pelo pipeline de interpretacao, que
- * nesta etapa so conhece a tool <code>registrarDespesa</code>
- * (<code>sdd-modulo-nlu.md</code>). Ate la o convite e inserido direto no banco;
- * ver README.
+ * <p>So o aceite. A emissao pelo OWNER vive em {@link InviteIssuer}, em bean
+ * separado: os dois lados partem de situacoes opostas -- o aceite chega de
+ * numero desconhecido, sem household nenhum, enquanto a emissao parte de numero
+ * ja vinculado e atravessa o pipeline de interpretacao.
  */
 @ApplicationScoped
 public class InviteFlow {
@@ -55,12 +54,12 @@ public class InviteFlow {
     public InviteReply open(String token) {
         Optional<HouseholdInvite> found = invites.findByToken(token);
         if (found.isEmpty()) {
-            return new InviteReply(OnboardingMessages.INVITE_NOT_FOUND, false);
+            return new InviteReply(OnboardingMessages.inviteNotFound(), false);
         }
         HouseholdInvite invite = found.get();
         return switch (invite.currentStatus(Instant.now())) {
-            case ACCEPTED -> new InviteReply(OnboardingMessages.INVITE_ALREADY_USED, false);
-            case EXPIRED -> new InviteReply(OnboardingMessages.INVITE_EXPIRED, false);
+            case ACCEPTED -> new InviteReply(OnboardingMessages.inviteAlreadyUsed(), false);
+            case EXPIRED -> new InviteReply(OnboardingMessages.inviteExpired(), false);
             case PENDING -> new InviteReply(
                     OnboardingMessages.inviteAskContact(households.findById(invite.householdId).name), true);
         };
@@ -80,16 +79,16 @@ public class InviteFlow {
                 : invites.findPendingByPhoneNumber(contact.sharedPhoneNumber());
 
         if (found.isEmpty()) {
-            return new InviteReply(OnboardingMessages.INVITE_NOT_FOUND, false);
+            return new InviteReply(OnboardingMessages.inviteNotFound(), false);
         }
         HouseholdInvite invite = found.get();
 
         switch (invite.currentStatus(Instant.now())) {
             case ACCEPTED -> {
-                return new InviteReply(OnboardingMessages.INVITE_ALREADY_USED, false);
+                return new InviteReply(OnboardingMessages.inviteAlreadyUsed(), false);
             }
             case EXPIRED -> {
-                return new InviteReply(OnboardingMessages.INVITE_EXPIRED, false);
+                return new InviteReply(OnboardingMessages.inviteExpired(), false);
             }
             default -> {
                 // segue pro aceite
@@ -98,7 +97,7 @@ public class InviteFlow {
 
         if (!invite.phoneNumber.equals(contact.sharedPhoneNumber())) {
             // Continua PENDING de proposito: numero errado nao queima o convite.
-            return new InviteReply(OnboardingMessages.INVITE_PHONE_MISMATCH, true);
+            return new InviteReply(OnboardingMessages.invitePhoneMismatch(), true);
         }
 
         return new InviteReply(accept(invite, contact), false);

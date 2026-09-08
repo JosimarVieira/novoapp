@@ -124,6 +124,12 @@ checar contra as ADRs aceitas. Não modifique nada dentro de `legacy/`.
   corrigida em 2026-09-05).
 - **Comportamento vira `.feature` antes de virar código.** O Gherkin é a fonte
   de verdade; o teste de aceitação implementa o Gherkin, não o contrário.
+- **ADR e SDD se apontam nos dois sentidos, e o build cobra.** SDD sem ADR é
+  design sem lastro; ADR aceita que nenhum SDD reflete é decisão que ninguém
+  implementou e que vai ser redescoberta tarde — foi assim que a ADR-0015
+  atravessou duas etapas sendo contrariada. `DocumentationCoherenceTest` quebra o
+  build nos dois casos. Exceção existe, mas é linha de código com o motivo
+  escrito, nunca silêncio.
 - **Dúvida que não é decisão vai para `DECISOES-ABERTAS.md`.** Não invente
   premissa silenciosa.
 

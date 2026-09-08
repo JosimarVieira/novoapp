@@ -2,7 +2,7 @@
 tipo: sdd
 modulo: channel
 status: escrito
-atualizado_em: 2026-09-05
+atualizado_em: 2026-09-07
 adrs:
   - ADR-0002
   - ADR-0005
@@ -58,7 +58,17 @@ channel/
                                        DO NOTHING, ADR-0005
   outbound/
     TelegramMessageSender implements identity.spi.OutboundMessagePort
+    TelegramInviteLink    implements identity.spi.InviteLinkPort
 ```
+
+`TelegramInviteLink` entrou na Etapa 2a: o link do convite
+(`t.me/<bot>?start=<token>`, [ADR-0020](../01-adr/0020-convite-de-membro.md)) tem
+formato de provedor, e por isso é montado aqui e não em `identity` — mesmo
+argumento e mesmo padrão do `OutboundMessagePort`. Precisa do username do bot
+(`novoapp.channel.telegram.bot-username`): não dá para derivá-lo do token da Bot
+API sem uma chamada de rede, e o link é montado no meio de uma resposta de chat.
+Vazio devolve o token cru, que é o suficiente em desenvolvimento e em teste, onde
+não há bot publicado.
 
 ## Fluxo (caminho feliz)
 

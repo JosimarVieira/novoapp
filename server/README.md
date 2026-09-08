@@ -57,6 +57,7 @@ export NOVOAPP_DB_ADMIN_USER=postgres          # dono do schema, só o Flyway us
 export NOVOAPP_DB_ADMIN_PASSWORD=postgres
 export NOVOAPP_DB_RUNTIME_PASSWORD=<senha>     # a aplicação conecta com esta
 export TELEGRAM_BOT_TOKEN=<token do BotFather>
+export TELEGRAM_BOT_USERNAME=<username do bot, sem o @>   # so pro link do convite
 export TELEGRAM_WEBHOOK_SECRET=<qualquer string longa>
 export MISTRAL_API_KEY=<chave do tier gratuito>   # ADR-0009
 ```
@@ -165,6 +166,7 @@ NOVOAPP_DB_ADMIN_USER       = ${{Postgres.PGUSER}}
 NOVOAPP_DB_ADMIN_PASSWORD   = ${{Postgres.PGPASSWORD}}
 NOVOAPP_DB_RUNTIME_PASSWORD = <gere uma; é a senha do papel novoapp_runtime>
 TELEGRAM_BOT_TOKEN          = <BotFather>
+TELEGRAM_BOT_USERNAME       = <username do bot, sem o @>
 TELEGRAM_WEBHOOK_SECRET     = <o mesmo do setWebhook>
 MISTRAL_API_KEY             = <console.mistral.ai>
 ```
@@ -191,50 +193,43 @@ apontando para `https://<dominio>/webhook/telegram`.
   para `/q/health` resolve, e é uma dependência nova — fica para quando alguém
   decidir que vale.
 
-## O que ainda se faz na mão (e por quê)
+## O que deixou de se fazer na mão (Etapa 2a)
 
-### Semear as categorias do household
+Duas coisas que a Etapa 1 exigia por SQL agora acontecem pelo chat, e as
+instruções antigas foram removidas em vez de mantidas como alternativa: seguir
+usando SQL para elas passaria por cima justamente do fluxo que a Etapa 2a
+entregou.
 
-Household novo nasce **sem nenhuma categoria** ([ADR-0013](../docs/01-adr/0013-household-novo-comeca-sem-categorias.md)), e criar categoria
-por chat é Etapa 2. Sem categoria, `mercado 50` sempre cai em confiança baixa —
-o enum da tool ficaria vazio. Para validar a Etapa 1, insira na mão as
-categorias da sua família:
+**Semear as categorias.** Household novo continua nascendo sem nenhuma
+([ADR-0013](../docs/01-adr/0013-household-novo-comeca-sem-categorias.md)), mas
+agora a primeira mensagem cria a que faltar: `pet shop 80` oferece criar "Pet
+shop" e grava depois do `sim`; `restaurante eu e esposa 90` corrigido para
+"restaurante dentro de alimentação" cria a hierarquia inteira (ADRs
+[0024](../docs/01-adr/0024-categoria-sugerida-por-texto-livre.md) e
+[0026](../docs/01-adr/0026-hierarquia-na-criacao-de-categoria-por-chat.md)).
 
-```sql
--- conecte como o usuário administrativo (o Flyway), não como novoapp_runtime:
--- RLS não deixa novoapp_app escrever categoria de um household que ainda não
--- está no contexto da transação.
-INSERT INTO category (household_id, name, kind)
-SELECT id, nome, 'EXPENSE'
-FROM household, unnest(ARRAY['Mercado', 'Farmácia', 'Transporte']) AS nome
-WHERE household.name = 'Silva';
-```
+**Emitir convite.** `convidar Bruno, +5511900000002`, mandado por quem é `OWNER`,
+cria o convite e devolve o link ([ADR-0020](../docs/01-adr/0020-convite-de-membro.md)).
+Para o link sair como `https://t.me/<bot>?start=<token>` e não como o token cru,
+configure `TELEGRAM_BOT_USERNAME` com o username do bot, sem o arroba. O sistema
+**não** entrega o convite: quem repassa é o `OWNER` — a Bot API não deixa um bot
+iniciar conversa com quem nunca falou com ele.
 
-Isto **não** contraria a ADR-0013: não é o produto pré-criando categoria, é você
-plantando dado de teste. O fluxo de criação por chat continua intocado para ser
-validado de verdade na Etapa 2.
+## Configuração provisória, declarada como tal
 
-### Emitir um convite
+Três valores em `application.properties` são palpite, não calibração, e estão
+marcados assim no próprio arquivo:
 
-A criação do convite pelo OWNER (`convidar Bruno, +55...`) é `@etapa2` — o
-comando parte de número já vinculado e atravessaria o pipeline de interpretação,
-que nesta etapa só conhece `registrarDespesa`. Todo o **aceite** está
-implementado. Para testar, insira o convite:
+| Propriedade | Hoje | Decide |
+|---|---|---|
+| `novoapp.conversation.confidence.high` | `0.8` | acima disso, executa direto |
+| `novoapp.conversation.confidence.low` | `0.4` | abaixo disso, pergunta aberta |
+| `novoapp.conversation.pending-action.ttl` | `PT10M` | prazo do atalho de resposta no chat |
 
-```sql
-INSERT INTO household_invite
-    (household_id, invited_by_member_id, phone_number, token, status, expires_at)
-SELECT h.id, m.id, '+5511900000002', 'teste-' || gen_random_uuid(),
-       'PENDING', now() + interval '7 days'
-FROM household h
-JOIN household_membership hm ON hm.household_id = h.id AND hm.role = 'OWNER'
-JOIN member m ON m.id = hm.member_id
-WHERE h.name = 'Silva';
-
-SELECT token FROM household_invite WHERE status = 'PENDING';
-```
-
-O convidado abre `https://t.me/<seu-bot>?start=<token>` e compartilha o contato.
+São config global do app — editáveis e redeployáveis, nunca constante escondida
+no código e nunca preferência por household
+([decisões abertas #7 e #8](../docs/DECISOES-ABERTAS.md)). Os números de verdade
+saem da Etapa 5, com dado real.
 
 ## Papéis de banco
 
@@ -275,10 +270,11 @@ com.novoapp
   common/message    -- InboundMessage normalizado, sem traço do canal
   channel           -- webhook, idempotência, envio. Ninguém depende dele
   identity          -- resolve tenant, onboarding, convite
-  nlu               -- function calling, uma tool
-  conversation      -- política de confiança e recibo
-  finance           -- lançamento, conta, categoria
-  shopping / tasks  -- vazios: existem para a fronteira já estar travada
+  nlu               -- function calling, seis tools
+  conversation      -- política de confiança, pendência, curto-circuito, recibo
+  finance           -- lançamento, conta, categoria, estorno
+  shopping          -- lista de compras e itens
+  tasks             -- vazio: existe para a fronteira já estar travada
 ```
 
 A regra de dependência entre eles é

@@ -2,9 +2,10 @@
 tipo: sdd
 modulo: identity
 status: escrito
-atualizado_em: 2026-09-05
+atualizado_em: 2026-09-08
 adrs:
   - ADR-0003
+  - ADR-0015
   - ADR-0007
   - ADR-0011
   - ADR-0020
@@ -72,11 +73,15 @@ identity/
                                        implementada por channel.outbound.TelegramMessageSender
   IdentityResolutionService        -- resolveContext(channel, externalId)
                                        -> ResolvedContext | ChooseHousehold | OnboardingStep
+    InviteLinkPort                 -- interface: String linkFor(Channel, token)
+                                       implementada por channel.outbound.TelegramInviteLink
+  MemberDirectory                  -- nome de um membro, para quem precisa escrever
+                                       "pedido por Ana" num recibo
   onboarding/
     HouseholdSelfServiceFlow       -- "quer criar uma família?" -> nome ->
                                        cria household + member(OWNER) + membership
-    InviteFlow                     -- OWNER pede convite; convidado aceita
-                                       (telefone + contato compartilhado)
+    InviteIssuer                   -- OWNER pede convite: cria e devolve o link
+    InviteFlow                     -- convidado aceita (telefone + contato compartilhado)
   auth/
     AuthenticationService           -- login(email, senha) -> LoginResult
                                         cadastrar(nome, email, senha, nomeFamilia) -> LoginResult
@@ -226,6 +231,53 @@ Uma quarta coisa que **não** foi implementada: a emissão do convite pelo OWNER
 atravessa o pipeline de interpretação, e o `nlu` da Etapa 1 só declara a tool
 `registrarDespesa`. O cenário virou `@etapa2` no `.feature`. Todo o lado do
 aceite está implementado.
+
+## Decisões tomadas ao implementar a Etapa 2a (2026-09-07)
+
+**A emissão do convite entrou, em bean próprio (`InviteIssuer`).** Separado do
+`InviteFlow`, que cuida do aceite: os dois lados partem de situações opostas. O
+aceite chega de número desconhecido, sem household nenhum; a emissão parte de
+número já vinculado e atravessa o pipeline de interpretação. Duas recusas
+nomeadas, não exceções: quem não é `OWNER` não convida, e telefone com convite
+pendente e não vencido não ganha um segundo link — dois links válidos para o
+mesmo número é confusão sem ganho, e a
+[ADR-0020](../01-adr/0020-convite-de-membro.md) não decide reenvio.
+
+**O link do convite é montado por `channel`, através de um porto novo
+(`InviteLinkPort`).** A ADR-0020 diz que o bot "devolve o link", mas o formato
+(`t.me/<bot>?start=<token>`) é do provedor: montar essa URL dentro de `identity`
+quebraria a regra 5 do CLAUDE.md de um jeito que o ArchUnit nem pegaria, porque
+seria uma string e não um tipo. Mesmo padrão do `OutboundMessagePort` — interface
+aqui, implementação em `channel`. Quando o WhatsApp entrar (Etapa 7), entra outra
+implementação do mesmo porto e nada aqui muda.
+
+**`ResolvedContext` passou a carregar `channel_identity_id`.** A
+`pending_action` exige essa coluna e é escrita sob o papel de domínio, que não
+enxerga `channel_identity` ([ADR-0022](../01-adr/0022-papel-de-banco-pre-tenant-para-identidade.md)).
+As alternativas eram dar ao papel de domínio um grant sobre a tabela — o que
+dissolveria a ADR-0022 — ou devolver o id junto do contexto, que é o que quem
+resolveu a identidade já tem em mãos.
+
+**Idioma do membro (ADR-0015), corrigido em 2026-09-08.** `member` ganhou
+`preferred_locale` (default `pt-BR`) e `resolveContext` passou a devolvê-lo
+dentro do `ResolvedContext` — é `identity` que resolve quem é a pessoa, então é
+aqui que se descobre em que idioma ela lê. O onboarding é a exceção declarada:
+quem está no meio dele ainda não tem `member`, logo não tem preferência, e todo
+texto de `OnboardingMessages` sai no idioma padrão. Perguntar o idioma como
+primeiro passo do onboarding não está em nenhuma ADR nem em nenhum cenário.
+
+Fora desta etapa, de propósito: o **comando** para trocar de idioma, que a
+ADR-0015 menciona ("trocável por comando"). Só existe conteúdo em `pt-BR`
+durante a validação (decisão 2 da própria ADR), então o comando trocaria para um
+idioma sem texto. Entra quando `en`/`es` entrarem.
+
+**`MemberDirectory` existe porque `member` não tem RLS.** Ela não tem
+`household_id` ([ADR-0007](../01-adr/0007-pessoa-em-multiplos-households.md)),
+então não há policy em que se apoiar, e só o papel pré-tenant tem grant. Sem
+este ponto, qualquer módulo de domínio que precisasse do nome de um membro —
+`shopping` para dizer "pedido por Ana", `conversation` para dizer quem lançou o
+que foi estornado — teria de usar o escopo pré-tenant por conta própria, que é
+justamente o que o teste ArchUnit proíbe. Devolve só o nome, nunca a entidade.
 
 ## Gatilhos de revisão
 

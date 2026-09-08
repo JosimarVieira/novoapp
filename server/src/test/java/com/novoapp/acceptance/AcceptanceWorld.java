@@ -45,9 +45,19 @@ public class AcceptanceWorld {
     final Map<String, UUID> members = new LinkedHashMap<>();
     final Map<String, UUID> categories = new LinkedHashMap<>();
     final Map<String, String> inviteTokens = new LinkedHashMap<>();
+    /** A carteira implicita de cada household, pra montar lancamento por fixture. */
+    final Map<String, UUID> wallets = new LinkedHashMap<>();
+    final Map<String, UUID> shoppingLists = new LinkedHashMap<>();
 
     /** Quem falou por ultimo. E a "pessoa" dos passos que nao repetem o nome. */
     String currentActor;
+
+    /**
+     * A ultima categoria que um passo conferiu como criada. E o que da sentido a
+     * "uma despesa e registrada <b>nessa</b> categoria", que aparece logo depois
+     * em varios cenarios de criacao.
+     */
+    String lastCategoryChecked;
 
     void reset() {
         fixtures.truncateAll();
@@ -58,7 +68,10 @@ public class AcceptanceWorld {
         members.clear();
         categories.clear();
         inviteTokens.clear();
+        wallets.clear();
+        shoppingLists.clear();
         currentActor = null;
+        lastCategoryChecked = null;
     }
 
     String externalIdFor(String actor) {

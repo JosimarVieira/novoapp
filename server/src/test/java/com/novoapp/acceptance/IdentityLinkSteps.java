@@ -15,7 +15,15 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** Passos de `vinculo-de-identidade.feature`, cenarios @etapa1. */
+/**
+ * Passos de `vinculo-de-identidade.feature`.
+ *
+ * <p>O aceite do convite (o lado de quem recebe) e @etapa1 e ja existia. A
+ * emissao pelo OWNER e @etapa2: o comando parte de numero ja vinculado, entao
+ * atravessa o pipeline de interpretacao como qualquer outra mensagem, e so
+ * existe depois que <code>nlu</code> ganhou a tool <code>convidarMembro</code>
+ * (ADR-0020).
+ */
 public class IdentityLinkSteps {
 
     @Inject
@@ -199,19 +207,19 @@ public class IdentityLinkSteps {
 
     @Entao("^a pessoa recebe um aviso de que este convite não é para o número dela$")
     public void receivesPhoneMismatchWarning() {
-        assertThat(world.lastReplyToCurrentActor()).isEqualTo(OnboardingMessages.INVITE_PHONE_MISMATCH);
+        assertThat(world.lastReplyToCurrentActor()).isEqualTo(OnboardingMessages.invitePhoneMismatch());
     }
 
     @Entao("^a pessoa recebe um aviso de que o convite expirou$")
     public void receivesExpiredWarning() {
         assertThat(world.repliesTo(world.currentActor))
                 .extracting(reply -> reply.text())
-                .contains(OnboardingMessages.INVITE_EXPIRED);
+                .contains(OnboardingMessages.inviteExpired());
     }
 
     @Entao("^a pessoa recebe um aviso de que o convite já foi usado$")
     public void receivesAlreadyUsedWarning() {
-        assertThat(world.lastReplyToCurrentActor()).isEqualTo(OnboardingMessages.INVITE_ALREADY_USED);
+        assertThat(world.lastReplyToCurrentActor()).isEqualTo(OnboardingMessages.inviteAlreadyUsed());
     }
 
     /**
@@ -229,6 +237,58 @@ public class IdentityLinkSteps {
     @E("^nenhum vínculo novo é criado$")
     public void noNewMembershipCreated() {
         noMembershipCreated();
+    }
+
+    // ------------------------------------------------------------------
+    // Emissao do convite pelo OWNER (ADR-0020), @etapa2
+    // ------------------------------------------------------------------
+
+    @Dado("^que existe o household \"([^\"]*)\" com \"([^\"]*)\" como \"([^\"]*)\"$")
+    public void householdWithOwner(String householdName, String memberName, String role) {
+        UUID householdId = fixtures.insertHousehold(householdName);
+        fixtures.insertWallet(householdId);
+        UUID memberId = fixtures.insertMember(memberName, null);
+        fixtures.insertMembership(householdId, memberId, role);
+        fixtures.insertChannelIdentity(memberId, "TELEGRAM", world.externalIdFor(memberName), householdId);
+        world.households.put(householdName, householdId);
+        world.members.put(memberName, memberId);
+        world.nameOf(memberName, memberName);
+    }
+
+    @Entao("^um convite é criado para o telefone \"([^\"]*)\" com status \"([^\"]*)\"$")
+    public void inviteCreatedFor(String phoneNumber, String status) {
+        List<List<Object>> rows = fixtures.query(
+                "SELECT status, token FROM household_invite WHERE phone_number = ?", phoneNumber);
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0).get(0)).isEqualTo(status);
+        world.inviteTokens.put(phoneNumber, (String) rows.get(0).get(1));
+    }
+
+    /** Prazo fixo da ADR-0020, conferido no dado gravado e nao no texto do recibo. */
+    @E("^o convite expira em 7 dias$")
+    public void inviteExpiresInSevenDays() {
+        List<List<Object>> rows = fixtures.query("SELECT created_at, expires_at FROM household_invite");
+        Instant createdAt = ((java.sql.Timestamp) rows.get(0).get(0)).toInstant();
+        Instant expiresAt = ((java.sql.Timestamp) rows.get(0).get(1)).toInstant();
+        assertThat(ChronoUnit.DAYS.between(createdAt, expiresAt)).isEqualTo(7);
+    }
+
+    @E("^\"([^\"]*)\" recebe o link do convite$")
+    public void receivesInviteLink(String actor) {
+        assertThat(world.lastReplyTo(actor))
+                .contains(world.inviteTokens.values().iterator().next());
+    }
+
+    /**
+     * A Bot API do Telegram nao deixa um bot iniciar conversa com quem nunca
+     * falou com ele: o convite chega a pessoa convidada pela mao de quem
+     * convidou, nunca pelo sistema (ADR-0020). Este passo trava isso -- e o unico
+     * jeito de a regressao aparecer e uma mensagem sair pra quem nao pediu nada.
+     */
+    @E("^o sistema não envia o link para \"([^\"]*)\" — quem repassa é \"([^\"]*)\"$")
+    public void systemDoesNotDeliverTheLink(String invitedName, String inviterName) {
+        assertThat(world.repliesTo(invitedName)).isEmpty();
+        assertThat(world.repliesTo(inviterName)).hasSize(1);
     }
 
     // ------------------------------------------------------------------

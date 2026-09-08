@@ -38,6 +38,17 @@ public class Member extends PanacheEntityBase {
     @Column(name = "password_hash")
     public String passwordHash;
 
+    /**
+     * Idioma em que esta pessoa recebe as respostas (ADR-0015). Tag BCP 47,
+     * "pt-BR" por padrao.
+     *
+     * <p>Fica no membro e nao no household de proposito: um household pode ter
+     * gente com preferencia diferente, mesma razao de fundo que poe
+     * <code>active_household_id</code> na identidade de canal (ADR-0007).
+     */
+    @Column(name = "preferred_locale", nullable = false)
+    public String preferredLocale = com.novoapp.common.i18n.Messages.DEFAULT.toLanguageTag();
+
     @Column(name = "created_at", nullable = false)
     public Instant createdAt = Instant.now();
 }
