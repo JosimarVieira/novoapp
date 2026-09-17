@@ -214,9 +214,25 @@ valer (responder `sim` não pode gastar chamada de modelo) e o que dá ao
    - **baixa** → pergunta aberta curta, sem adivinhar.
 7. Dois casos escapam da faixa de confiança, de propósito:
    - **categoria inexistente** ([ADR-0024](../01-adr/0024-categoria-sugerida-por-texto-livre.md))
-     sempre pergunta, mesmo com confiança alta — não é escolher entre
-     alternativas existentes, é confirmar um nome novo, e criar categoria é
-     irreversível pelo chat;
+     sempre pergunta — **nos dois sentidos da faixa**. Com confiança alta,
+     porque não é escolher entre alternativas existentes, é confirmar um nome
+     novo, e criar categoria é irreversível pelo chat. Com confiança baixa,
+     porque perguntar aqui não é adivinhar: nada é criado sem o `sim`, e uma
+     pergunta com um nome concreto dentro custa uma palavra para responder,
+     enquanto "não entendi" custa reescrever a mensagem e não ensina nada.
+
+     **Corrigido em 2026-09-17**, com dado de uso real. O código verificava a
+     faixa baixa antes, e `Pet shop 80` — mensagem sem nenhuma ambiguidade —
+     chegava do Mistral com `confianca` 0,3. O bot respondia "não entendi essa"
+     sabendo exatamente o que a pessoa quis, e com o nome da categoria na mão.
+     É colisão entre ADRs aceitas (a [ADR-0004](../01-adr/0004-interpretacao-por-function-calling-com-politica-de-confianca.md)
+     manda confiança baixa não adivinhar), resolvida a favor da ADR-0024 e
+     registrada aqui, no molde das três colisões que a Etapa 2a resolveu.
+
+     Fica o dado para a [decisão aberta #7](../DECISOES-ABERTAS.md): o modelo
+     parece reportar confiança baixa sistematicamente quando precisa sugerir
+     categoria nova. Se isso se confirmar na Etapa 5, o limiar é que está
+     errado, não o caso;
    - **valor ausente** sempre pergunta, porque não há valor a adivinhar.
    - E a **descrição** ([ADR-0023](../01-adr/0023-descricao-de-lancamento-extraida-pelo-llm.md))
      nunca pergunta nada: ausência dela não reduz confiança e não impede

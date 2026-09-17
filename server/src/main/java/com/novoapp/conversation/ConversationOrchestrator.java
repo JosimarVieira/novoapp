@@ -404,13 +404,24 @@ public class ConversationOrchestrator {
                                               ResolvedContext context,
                                               Reply reply) {
         ConfidencePolicy.Level level = confidence.levelOf(expense.confidence());
-        if (level == ConfidencePolicy.Level.LOW) {
-            return notUnderstood(reply, expense.confidence());
-        }
 
         // Categoria que nao existe tem confirmacao propria, e nao a linha
         // "opcoes numeradas" da tabela da ADR-0004: aquela linha e sobre escolher
         // entre alternativas existentes, e aqui nao ha nenhuma (ADR-0024).
+        //
+        // Vem ANTES da faixa baixa, e nao depois (corrigido em 2026-09-17, com
+        // dado de uso real): "Pet shop 80" chegava com confianca 0,3 -- o modelo
+        // se declara inseguro justamente quando tem de sugerir nome novo -- e a
+        // faixa baixa engolia a mensagem antes de alguem reparar que havia um
+        // nome de categoria ali. O usuario recebia "nao entendi essa" com o bot
+        // sabendo exatamente o que ele quis.
+        //
+        // Colisao entre ADRs aceitas: a ADR-0004 manda confianca baixa nao
+        // adivinhar; a ADR-0024 manda categoria inexistente sempre perguntar.
+        // Prevalece a ADR-0024, porque perguntar aqui nao e adivinhar -- nada e
+        // criado sem o "sim", e uma pergunta com um nome concreto dentro custa
+        // uma palavra para responder, enquanto "nao entendi" custa reescrever a
+        // mensagem inteira e nao ensina nada.
         if (expense.needsCategoryCreation()) {
             String question = receipts.offerCategoryCreation(reply.locale, expense.suggestedCategory(),
                     expense.amountCents());
@@ -420,6 +431,10 @@ public class ConversationOrchestrator {
                     question, List.of());
             reply.send(question);
             return interpreted(expense.confidence());
+        }
+
+        if (level == ConfidencePolicy.Level.LOW) {
+            return notUnderstood(reply, expense.confidence());
         }
 
         PendingIntent.Option chosen = new PendingIntent.Option(expense.categoryId(),
