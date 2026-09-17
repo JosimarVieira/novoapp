@@ -96,6 +96,30 @@ public class PendingActionService {
         pendingActions.flush();
     }
 
+    /**
+     * Fecha a janela do atalho sem resolver a pendencia (ADR-0029).
+     *
+     * <p>Usado quando a pessoa mudou de assunto e a mensagem nova venceu: a
+     * pergunta para de interceptar o fio do chat, mas ninguem a respondeu.
+     * {@code resolution} continua nula, entao ela segue aparecendo na central de
+     * pendencias da Etapa 4 exatamente como as que venceram por tempo.
+     *
+     * <p>E <code>expires_at</code> que se mexe, e nao uma coluna nova: a
+     * ADR-0018 define esse campo como aquilo que muda o <em>caminho</em> de
+     * resolucao e nunca o estado, e e exatamente esse o efeito desejado aqui.
+     * Marcar {@code REJECTED} seria mentira -- ninguem disse nao.
+     */
+    @Transactional
+    @HouseholdScoped
+    public void closeShortcutWindow(UUID pendingActionId) {
+        PendingAction pending = pendingActions.findById(pendingActionId);
+        if (pending == null || pending.resolvedAt != null) {
+            return;
+        }
+        pending.expiresAt = Instant.now(clock);
+        pendingActions.flush();
+    }
+
     @Transactional
     @HouseholdScoped
     public void resolve(UUID pendingActionId, PendingResolution resolution) {

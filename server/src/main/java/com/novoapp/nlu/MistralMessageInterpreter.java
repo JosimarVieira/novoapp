@@ -22,6 +22,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -47,12 +48,29 @@ public class MistralMessageInterpreter implements MessageInterpreter {
             Preencha sempre o parametro confianca, com honestidade: ele decide se o sistema executa
             direto ou pergunta antes.""";
 
-    private static final String CATEGORY_CORRECTION_PROMPT = """
-            A pessoa esta respondendo a uma pergunta do bot que ofereceu criar uma categoria de despesa
-            nova, e a resposta dela nao foi um simples sim ou nao -- e uma correcao.
-            Leia a correcao e chame confirmarCategoriaSugerida com o nome final da categoria e, se a
-            pessoa indicou uma categoria-pai ("dentro de", "em"), com ela tambem.
-            Nao invente categoria-pai que a pessoa nao escreveu.""";
+    /**
+     * ADR-0029. O modelo escolhe entre duas leituras, e a segunda so vale com
+     * confianca alta: superar a pergunta e destrutivo -- ela sai do fio e o que
+     * ja estava capturado deixa de estar ao alcance de um "sim".
+     */
+    private static final String ANSWERING_PENDING_PROMPT = """
+            O bot fez uma pergunta e a pessoa respondeu algo que nao foi sim, nao, desfazer nem um numero.
+            Duas leituras sao possiveis, e voce escolhe uma:
+            1) a mensagem responde ou corrige a pergunta que o bot fez;
+            2) a pessoa ignorou a pergunta e esta pedindo outra coisa.
+            Escolha a ferramenta que corresponde a leitura certa.
+            So use confianca alta na leitura 2 se estiver claro que a pessoa mudou de assunto. Se a
+            mensagem puder ser uma resposta a pergunta, ainda que parcial ou mal escrita, ela e a
+            leitura 1 -- responder com o nome de uma das opcoes, em vez do numero dela, e responder.
+            Converta valor de dinheiro para centavos: 50 reais viram 5000.
+            Nunca invente valor, categoria, item nem hierarquia de categoria que a pessoa nao escreveu.
+            Preencha sempre o parametro confianca, com honestidade.""";
+
+    private static final String CATEGORY_CORRECTION_HINT = """
+            A pergunta do bot ofereceu criar uma categoria de despesa nova. Se a mensagem for uma
+            correcao dessa categoria, chame confirmarCategoriaSugerida com o nome final e, se a pessoa
+            indicou uma categoria-pai ("dentro de", "em"), com ela tambem. Nao invente categoria-pai
+            que a pessoa nao escreveu.""";
 
     @Inject
     ChatModel chatModel;
@@ -80,19 +98,25 @@ public class MistralMessageInterpreter implements MessageInterpreter {
         return parse(toolCalls.get(0));
     }
 
+    /**
+     * A correcao de categoria continua sem ser declarada em mensagem comum
+     * (ADR-0026, pelo mesmo motivo que a ADR-0024 descartou uma tool
+     * <code>criarCategoria</code> geral): ela so entra quando ha, de fato, uma
+     * categoria oferecida a corrigir. O que a ADR-0029 mudou e que ela deixou de
+     * ser a <b>unica</b> nesse momento -- sozinha, o modelo nao tinha como dizer
+     * "isto nao responde a pergunta".
+     */
     private List<ToolSpecification> toolsFor(InterpretationRequest request) {
-        return switch (request.purpose()) {
-            // So esta tool, e so neste momento: declarar a correcao de categoria
-            // sempre a poria competindo pela escolha em toda mensagem (ADR-0026,
-            // pelo mesmo motivo que a ADR-0024 descartou uma tool criarCategoria).
-            case CATEGORY_CORRECTION -> List.of(ConfirmSuggestedCategoryTool.specification());
-            case GENERAL -> List.of(
-                    RegisterExpenseTool.specification(request.expenseCategories()),
-                    AddListItemTool.specification(),
-                    MarkItemPurchasedTool.specification(),
-                    QueryListTool.specification(),
-                    InviteMemberTool.specification());
-        };
+        List<ToolSpecification> tools = new ArrayList<>(List.of(
+                RegisterExpenseTool.specification(request.expenseCategories()),
+                AddListItemTool.specification(),
+                MarkItemPurchasedTool.specification(),
+                QueryListTool.specification(),
+                InviteMemberTool.specification()));
+        if (request.categoryCorrectionOffered()) {
+            tools.add(ConfirmSuggestedCategoryTool.specification());
+        }
+        return List.copyOf(tools);
     }
 
     /**
@@ -104,8 +128,11 @@ public class MistralMessageInterpreter implements MessageInterpreter {
     private String systemPromptFor(InterpretationRequest request) {
         StringBuilder prompt = new StringBuilder(request.purpose() == InterpretationRequest.Purpose.GENERAL
                 ? GENERAL_PROMPT
-                : CATEGORY_CORRECTION_PROMPT);
+                : ANSWERING_PENDING_PROMPT);
 
+        if (request.categoryCorrectionOffered()) {
+            prompt.append("\n\n").append(CATEGORY_CORRECTION_HINT);
+        }
         if (request.questionAsked() != null) {
             prompt.append("\n\nPergunta que o bot fez: ").append(request.questionAsked());
         }

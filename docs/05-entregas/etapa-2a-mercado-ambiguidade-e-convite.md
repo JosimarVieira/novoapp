@@ -109,11 +109,19 @@ membro para quem precisa escrever "pedido por Ana"), `InviteLinkPort` +
 
 ## Testes
 
-89 no total, todos verdes: 22 cenários `@etapa2` (193 passos), 16 `@etapa1`, os
-quatro obrigatórios da
+89 no total, todos verdes: 22 cenários `@etapa2` (193 passos), 16 `@etapa1`,
+**três dos quatro** obrigatórios da
 [`estrategia-de-testes.md`](../04-qualidade/estrategia-de-testes.md), as 11
 regras de ArchUnit, o `CategoryHierarchyTest` novo e — a partir da revisão de
 2026-09-08 — `MessageBundleTest` e `DocumentationCoherenceTest`.
+
+> **Correção de registro, 2026-09-16.** Esta frase dizia "os quatro obrigatórios".
+> São três: o terceiro da lista é *atomicidade do fechamento de compra*, que
+> cobre `fecharCompra` — Etapa 3 — e não tinha como existir nesta entrega.
+> Corrigido no próprio documento, e não por ADR de superação, porque é registro
+> que nunca foi verdade e não decisão que mudou (`CLAUDE.md`). O furo que a
+> afirmação escondia — não haver fronteira transacional onde a atomicidade
+> coubesse — virou a [ADR-0031](../01-adr/0031-atomicidade-do-fechamento-de-compra.md).
 
 O teste de vazamento de tenant ganhou as três tabelas novas.
 `pending_action` em especial guarda texto de conversa — é o tipo de dado cujo

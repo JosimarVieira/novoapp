@@ -1,7 +1,7 @@
 ---
 tipo: arquitetura
 status: escrito
-atualizado_em: 2026-09-07
+atualizado_em: 2026-09-16
 adrs:
   - ADR-0003
   - ADR-0005
@@ -21,6 +21,7 @@ adrs:
   - ADR-0024
   - ADR-0025
   - ADR-0026
+  - ADR-0030
 ---
 
 # Modelo de dados
@@ -354,9 +355,10 @@ invoice
 
 category
   id, household_id, name, kind (EXPENSE|INCOME),
+  name_normalized,                  -- name minúsculo e sem acento ([ADR-0030](../01-adr/0030-correspondencia-de-nome-por-forma-normalizada.md)); escrito só pela aplicação
   parent_category_id (nullable),    -- subcategoria; só 1 nível, validado em finance ([ADR-0016](../01-adr/0016-subcategoria.md))
   created_by_member_id, archived_at
-  UNIQUE (household_id, parent_category_id, lower(name), kind)
+  UNIQUE (household_id, parent_category_id, name_normalized, kind)
 
 transaction
   id, household_id, account_id, category_id,
@@ -500,9 +502,17 @@ Todas com RLS ativa e `FORCE`, exceto `member`
 Dois índices únicos parciais que a Etapa 2a acrescentou, e que são invariante de
 estrutura e não otimização: `shopping_list (household_id) WHERE status = 'ACTIVE'`
 ("um household tem no máximo uma lista ativa por vez", glossário) e
-`list_item (shopping_list_id, lower(name)) WHERE status = 'PENDING'` (duas
+`list_item (shopping_list_id, name_normalized) WHERE status = 'PENDING'` (duas
 pessoas avisando que acabou o arroz não viram dois arrozes pendentes — e o
 parcial permite que ele volte a faltar depois de comprado).
+
+Os dois índices de nome eram `lower(name)` até 2026-09-16, e por isso não
+seguravam a invariante que existiam para segurar: "cafe" e "café" passavam
+pelos dois. A [ADR-0030](../01-adr/0030-correspondencia-de-nome-por-forma-normalizada.md) trocou a expressão por uma coluna
+persistida, `name_normalized`, escrita por uma função única do lado Java. A
+migração `V5` faz o backfill e **aborta com a lista das linhas** se encontrar
+duplicata que só existia por causa do acento — resolver é manual, e é o preço de
+ter deixado o índice frouxo até aqui.
 
 As demais tabelas deste documento — `invoice`, `transaction_edit`,
 `financial_goal`, `goal_transaction_link`, `list_checkout`, `task` — estão

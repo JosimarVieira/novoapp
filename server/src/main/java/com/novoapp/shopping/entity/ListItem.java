@@ -33,6 +33,14 @@ public class ListItem extends PanacheEntityBase {
     public String name;
 
     /**
+     * {@link #name} minusculo e sem acento (ADR-0030). Sustenta o indice unico
+     * parcial de item pendente: sem ela, "acabou cafe" com "Café" ja na lista
+     * inseria um segundo item, em silencio.
+     */
+    @Column(name = "name_normalized", nullable = false)
+    public String nameNormalized;
+
+    /**
      * Fracionario de proposito: "meio quilo de queijo" e tao comum quanto "2 kg
      * de arroz". Nao viola a regra de dinheiro inteiro -- quantidade de item nao
      * e dinheiro.

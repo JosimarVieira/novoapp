@@ -78,7 +78,14 @@ public class PendingAction extends PanacheEntityBase {
     @Column(name = "created_at", nullable = false)
     public Instant createdAt = Instant.now();
 
+    /**
+     * Inclusivo de proposito: <code>expires_at</code> alcancado ja e vencido.
+     * Alem de ser a leitura natural do nome do campo, e o que torna confiavel o
+     * "fechar a janela do atalho" da ADR-0029, que grava exatamente o instante
+     * atual -- com comparacao estrita, a pendencia superada so pararia de
+     * interceptar o fio no microssegundo seguinte.
+     */
     public boolean isExpiredAt(Instant now) {
-        return expiresAt.isBefore(now);
+        return !expiresAt.isAfter(now);
     }
 }

@@ -118,6 +118,17 @@ public class ShoppingListSteps {
         assertThat(rows.get(0).get(0)).isEqualTo(world.members.get(memberName));
     }
 
+    /**
+     * Conta sem olhar o nome, de proposito (ADR-0030). O passo irmao abaixo
+     * compara por <code>lower(name)</code>, e por isso nao falsifica o furo de
+     * acentuacao: com "Café" e "Cafe" no banco, ele acharia exatamente um de
+     * cada e passaria. Quem prova que nao duplicou e a quantidade.
+     */
+    @Entao("^a lista tem exatamente um item pendente$")
+    public void exactlyOnePendingItem() {
+        assertThat(fixtures.count("SELECT count(*) FROM list_item WHERE status = 'PENDING'")).isEqualTo(1);
+    }
+
     @Entao("^a lista continua com um único item \"([^\"]*)\" pendente$")
     public void singlePendingItemRemains(String itemName) {
         assertThat(fixtures.count("SELECT count(*) FROM list_item WHERE status = 'PENDING' AND lower(name) = ?",

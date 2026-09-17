@@ -1,6 +1,7 @@
 package com.novoapp.shopping;
 
 import com.novoapp.common.tenancy.HouseholdScoped;
+import com.novoapp.common.text.Normalization;
 import com.novoapp.shopping.entity.ListItem;
 import com.novoapp.shopping.entity.ListItemStatus;
 import com.novoapp.shopping.entity.ShoppingList;
@@ -66,6 +67,8 @@ public class ShoppingService {
             item.householdId = householdId;
             item.shoppingListId = list.id;
             item.name = draft.name().trim();
+            // A forma que o indice unico parcial compara (ADR-0030).
+            item.nameNormalized = Normalization.of(draft.name());
             item.quantity = draft.quantity();
             item.unit = draft.unit();
             item.status = ListItemStatus.PENDING;
@@ -118,6 +121,7 @@ public class ShoppingService {
         item.householdId = householdId;
         item.shoppingListId = list.id;
         item.name = itemName.trim();
+        item.nameNormalized = Normalization.of(itemName);
         item.status = ListItemStatus.PURCHASED;
         item.requestedByMemberId = memberId;
         item.purchasedByMemberId = memberId;

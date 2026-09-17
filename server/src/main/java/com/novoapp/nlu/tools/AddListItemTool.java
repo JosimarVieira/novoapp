@@ -12,6 +12,12 @@ import dev.langchain4j.model.chat.request.json.JsonStringSchema;
  * <p>Recebe uma lista de itens, e nao um item: "acabou arroz, leite e cafe" e
  * uma mensagem so, e o cenario exige um recibo so. Varias chamadas da mesma tool
  * numa resposta seriam varios recibos.
+ *
+ * <p>O nome pede a grafia dos itens pendentes, igual a
+ * {@link MarkItemPurchasedTool}: enquanto a comparacao no banco for exata,
+ * "cafe" e "Cafe" viram dois itens pendentes distintos, sem pergunta e sem
+ * aviso. E mitigacao e nao conserto -- o conserto e a normalizacao de nome --,
+ * mas e a mitigacao que custa uma frase.
  */
 public final class AddListItemTool {
 
@@ -36,7 +42,8 @@ public final class AddListItemTool {
                                         .addProperty(ITEM_NAME_PARAMETER, JsonStringSchema.builder()
                                                 .description("Nome do produto, no singular e com inicial "
                                                         + "maiuscula, sem artigo: 'acabou o arroz' vira "
-                                                        + "'Arroz'.")
+                                                        + "'Arroz'. Se ele estiver entre os itens pendentes "
+                                                        + "informados no contexto, use a grafia de la.")
                                                 .build())
                                         .addProperty(ITEM_QUANTITY_PARAMETER, JsonNumberSchema.builder()
                                                 .description("Quanto, se a pessoa disse. Vazio no caso comum.")

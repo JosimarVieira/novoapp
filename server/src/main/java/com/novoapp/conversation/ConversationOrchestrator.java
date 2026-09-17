@@ -17,6 +17,7 @@ import com.novoapp.identity.spi.OutboundMessagePort;
 import com.novoapp.nlu.Intent;
 import com.novoapp.nlu.NluService;
 import com.novoapp.shopping.AddedItem;
+import com.novoapp.shopping.ItemDraft;
 import com.novoapp.shopping.ListItemView;
 import com.novoapp.shopping.MarkPurchasedResult;
 import com.novoapp.shopping.ShoppingService;
@@ -34,18 +35,31 @@ import java.util.UUID;
 
 /**
  * Politica de confianca, {@code PendingAction}, curto-circuito de confirmacao e
- * formatacao de recibo (ADR-0004, ADR-0018). Nao decide regra de negocio de
- * dominio -- so orquestra pendencia -> nlu -> confianca -> dominio -> recibo.
+ * formatacao de recibo (ADR-0004, ADR-0018, ADR-0029). Nao decide regra de
+ * negocio de dominio -- so orquestra pendencia -> nlu -> confianca -> dominio ->
+ * recibo.
  *
- * <p>A ordem do metodo {@link #process} e a decisao central desta etapa:
+ * <p>A ordem do metodo {@link #process} e a decisao central da Etapa 2a:
  * <b>pergunta em aberto vem antes de qualquer interpretacao</b>. E o que faz o
  * curto-circuito da regra 6 do CLAUDE.md valer -- responder "sim" nao pode gastar
  * chamada de modelo -- e o que da ao <code>desfazer</code> a precedencia
  * absoluta sobre estorno que a ADR-0025 decidiu.
  *
+ * <p>Duas coisas que a ADR-0029 mudou, e que atravessam este arquivo inteiro:
+ * <ol>
+ *   <li><b>confianca media nunca executa</b>, para nenhuma intencao que escreva
+ *       -- vira pendencia com a intencao ecoada de volta. A unica excecao
+ *       declarada e a consulta de lista, que nao escreve nada;</li>
+ *   <li><b>a pendencia guarda o que executar</b> ({@link PendingIntent#deferred()})
+ *       em vez de o orquestrador deduzir pelo tipo da pergunta. E o que faz
+ *       "quanto foi?" deixar de significar sempre "uma despesa".</li>
+ * </ol>
+ *
  * <p>Nao e transacional de proposito: a chamada ao LLM tem cauda de latencia
  * imprevisivel (ADR-0005) e nao pode segurar conexao de banco aberta. Cada passo
- * abre a propria transacao curta.
+ * abre a propria transacao curta. A consequencia -- um passo pode ter commitado
+ * quando o seguinte falha -- esta declarada no texto do recibo de erro, que por
+ * isso nao afirma "nao gravei nada".
  */
 @ApplicationScoped
 public class ConversationOrchestrator {
@@ -134,7 +148,9 @@ public class ConversationOrchestrator {
             // Excecao: desfazer. A ADR-0025 da precedencia so a pendencia "nao
             // expirada", entao aqui ele volta a significar estorno. Mensagem que
             // nao e atalho nenhum tambem segue em frente: senao uma pendencia
-            // esquecida travaria a conversa pra sempre.
+            // esquecida travaria a conversa pra sempre. E tambem o caminho de
+            // quem ja teve a pendencia superada (ADR-0029), que fecha a janela
+            // do atalho gravando expires_at.
             if (answer == ShortCircuit.Answer.UNDO || answer == ShortCircuit.Answer.OTHER) {
                 return Optional.empty();
             }
@@ -171,12 +187,11 @@ public class ConversationOrchestrator {
                         context.memberId(), intent.suggestedCategory(), null);
                 yield afterCategoryCreated(pending, creation, context, reply);
             }
-            case CONFIRM_PURCHASE -> {
+            // Confiança media (ADR-0029) e "nao estava na lista" (ADR-0018) sao a
+            // mesma mecanica: a intencao inteira estava guardada esperando o sim.
+            case CONFIRM_PURCHASE, CONFIRM_INTENT -> {
                 pendingActions.resolve(pending.id(), PendingResolution.CONFIRMED);
-                MarkPurchasedResult.Purchased purchased = shopping.addAlreadyPurchased(context.householdId(),
-                        context.memberId(), intent.itemName(), intent.sourceMessageId());
-                reply.send(receipts.purchasedReceipt(reply.locale, purchased.name()));
-                yield executed(null);
+                yield executeDeferred(intent, intent.amountCents(), context, reply);
             }
             // "sim" nao responde "qual das duas?" nem "quanto foi?".
             case CHOOSE_CATEGORY, ASK_AMOUNT -> repeatQuestion(pending, reply);
@@ -198,7 +213,8 @@ public class ConversationOrchestrator {
 
         List<PendingIntent.Option> options = intent.optionsOrEmpty();
         Integer chosen = ShortCircuit.optionNumber(message.rawText());
-        if (chosen == null || chosen < 1 || chosen > options.size()) {
+        if (intent.type() != PendingActionType.CHOOSE_CATEGORY
+                || chosen == null || chosen < 1 || chosen > options.size()) {
             return repeatQuestion(pending, reply);
         }
 
@@ -208,34 +224,59 @@ public class ConversationOrchestrator {
                 intent.sourceMessageId(), reply);
     }
 
+    /**
+     * Resposta que nao e atalho nenhum, com pergunta em aberto (ADR-0029).
+     *
+     * <p>Uma chamada ao modelo, com as ferramentas do dia a dia mais a correcao
+     * de categoria quando ha categoria oferecida a corrigir. Antes desta ADR so
+     * a correcao era declarada, e o modelo nao tinha como dizer "isto nao
+     * responde a pergunta" -- mensagem sobre outro assunto podia virar categoria
+     * errada levando junto o valor guardado na pendencia.
+     *
+     * <p>Superar a pergunta exige <b>confianca alta</b>, e nao so "escolheu uma
+     * tool": superar e destrutivo -- a pergunta sai do fio e o que ja estava
+     * capturado (valor, categoria escolhida) deixa de estar ao alcance de um
+     * "sim". Quem responde <code>mercado</code> em vez de <code>1</code> esta
+     * respondendo, nao mudando de assunto.
+     */
     private ProcessingOutcome otherAnswer(PendingActionService.Open pending,
                                           InboundMessage message,
                                           ResolvedContext context,
                                           Reply reply) {
         PendingIntent intent = pending.intent();
 
+        // Valor solto numa pendencia que pede valor continua deterministico: nao
+        // gasta modelo e nao corre o risco de ser lido como assunto novo.
         if (intent.type() == PendingActionType.ASK_AMOUNT
                 && ShortCircuit.amountCents(message.rawText()) != null) {
             return amountAnswer(pending, message, context, reply);
         }
 
-        // A excecao da ADR-0026 a regra 6, e a unica: so a pendencia de criacao de
-        // categoria trata resposta livre como correcao, e so ela gasta uma segunda
-        // chamada ao modelo. Qualquer outro tipo repete a pergunta.
-        if (intent.type() != PendingActionType.CREATE_CATEGORY) {
+        boolean correctionOffered = intent.type() == PendingActionType.CREATE_CATEGORY;
+        Intent read = nlu.interpretAnsweringPending(context.householdId(), pending.questionAsked(),
+                message.rawText(), correctionOffered);
+
+        if (read instanceof Intent.ConfirmSuggestedCategory correction) {
+            // A correcao livre da ADR-0026. Confianca baixa repete a pergunta em
+            // vez de criar categoria no palpite.
+            if (!correctionOffered || confidence.levelOf(correction.confidence()) == ConfidencePolicy.Level.LOW) {
+                return repeatQuestion(pending, reply);
+            }
+            CategoryCreation creation = categories.createExpenseCategory(context.householdId(),
+                    context.memberId(), correction.name(), correction.parentName());
+            return afterCategoryCreated(pending, creation, context, reply);
+        }
+
+        if (read instanceof Intent.Unknown
+                || confidence.levelOf(read.confidence()) != ConfidencePolicy.Level.HIGH) {
             return repeatQuestion(pending, reply);
         }
 
-        Intent corrected = nlu.interpretCategoryCorrection(context.householdId(),
-                pending.questionAsked(), message.rawText());
-        if (!(corrected instanceof Intent.ConfirmSuggestedCategory correction)
-                || confidence.levelOf(correction.confidence()) == ConfidencePolicy.Level.LOW) {
-            return repeatQuestion(pending, reply);
-        }
-
-        CategoryCreation creation = categories.createExpenseCategory(context.householdId(),
-                context.memberId(), correction.name(), correction.parentName());
-        return afterCategoryCreated(pending, creation, context, reply);
+        // Mudou de assunto, e esta claro que mudou: a pergunta para de
+        // interceptar o fio, mas continua sem resolucao -- ninguem a respondeu, e
+        // ela segue na central de pendencias (ADR-0018 + ADR-0029).
+        pendingActions.closeShortcutWindow(pending.id());
+        return execute(read, message, context, reply);
     }
 
     private ProcessingOutcome amountAnswer(PendingActionService.Open pending,
@@ -244,16 +285,48 @@ public class ConversationOrchestrator {
                                            Reply reply) {
         Long amountCents = ShortCircuit.amountCents(message.rawText());
         PendingIntent intent = pending.intent();
-        List<PendingIntent.Option> options = intent.optionsOrEmpty();
-        if (amountCents == null || amountCents <= 0 || options.isEmpty()) {
+        if (amountCents == null || amountCents <= 0) {
             return repeatQuestion(pending, reply);
         }
 
         pendingActions.resolve(pending.id(), PendingResolution.CONFIRMED);
-        RegisteredExpense expense = finance.registerExpense(context.householdId(), context.memberId(),
-                options.get(0).id(), amountCents, intent.description(), intent.sourceMessageId());
-        reply.send(receipts.expenseReceipt(expense, context));
-        return executed(expenseIntentJson(expense));
+        return executeDeferred(intent, amountCents, context, reply);
+    }
+
+    /**
+     * Executa o que a pendencia guardou (ADR-0029).
+     *
+     * <p>E aqui que "a pendencia sabe o que fazer" deixa de ser so uma frase da
+     * ADR: o <code>switch</code> e sobre {@link PendingIntent#deferred()}, nao
+     * sobre o tipo da pergunta. Acrescentar <code>fecharCompra</code> na Etapa 3
+     * e acrescentar um valor ao enum e um caso aqui -- que era exatamente o que o
+     * gatilho de revisao do SDD deste modulo mandava verificar.
+     */
+    private ProcessingOutcome executeDeferred(PendingIntent intent, Long amountCents,
+                                              ResolvedContext context, Reply reply) {
+        return switch (intent.deferred()) {
+            case REGISTER_EXPENSE -> {
+                List<PendingIntent.Option> options = intent.optionsOrEmpty();
+                if (options.isEmpty()) {
+                    // Pendencia de despesa sem categoria guardada nao deveria
+                    // existir; tratar como "nao entendi" e melhor que estourar em
+                    // cima de um lancamento.
+                    LOG.warnf("Pendencia de despesa sem categoria guardada: %s", intent);
+                    yield notUnderstood(reply, 0.0d);
+                }
+                yield registerOrAskAmount(context, options.get(0), amountCents, intent.description(),
+                        intent.sourceMessageId(), reply);
+            }
+            case ADD_LIST_ITEMS -> addItems(context, intent.itemsOrEmpty(), intent.sourceMessageId(), reply);
+            case MARK_PURCHASED -> markPurchased(context, intent.itemName(), intent.sourceMessageId(), reply);
+            case ADD_ALREADY_PURCHASED -> {
+                MarkPurchasedResult.Purchased purchased = shopping.addAlreadyPurchased(context.householdId(),
+                        context.memberId(), intent.itemName(), intent.sourceMessageId());
+                reply.send(receipts.purchasedReceipt(reply.locale, purchased.name()));
+                yield executed(json(Map.of("tool", "marcarItemComprado", "item", purchased.name())));
+            }
+            case INVITE_MEMBER -> issueInvite(context, intent.memberName(), intent.phoneNumber(), reply);
+        };
     }
 
     /**
@@ -301,13 +374,24 @@ public class ConversationOrchestrator {
             return reverseLatest(context, reply);
         }
 
-        Intent intent = nlu.interpret(context.householdId(), message.rawText());
+        return execute(nlu.interpret(context.householdId(), message.rawText()), message, context, reply);
+    }
+
+    /**
+     * O caminho de execucao de uma intencao recem-interpretada.
+     *
+     * <p>Compartilhado entre a mensagem nova e a mensagem que superou uma
+     * pendencia (ADR-0029): depois de a pergunta antiga sair do caminho, mudar
+     * de assunto tem que valer exatamente o mesmo que ter dito aquilo do nada.
+     */
+    private ProcessingOutcome execute(Intent intent, InboundMessage message,
+                                      ResolvedContext context, Reply reply) {
         return switch (intent) {
             case Intent.RegisterExpense expense -> registerExpense(expense, message, context, reply);
             case Intent.AddListItems items -> addListItems(items, message, context, reply);
             case Intent.MarkItemPurchased purchase -> markItemPurchased(purchase, message, context, reply);
             case Intent.QueryList query -> queryList(query, context, reply);
-            case Intent.InviteMember invite -> inviteMember(invite, context, reply);
+            case Intent.InviteMember invite -> inviteMember(invite, message, context, reply);
             // Correcao de categoria so existe respondendo a uma pendencia; fora
             // dela nao ha o que corrigir.
             case Intent.ConfirmSuggestedCategory ignored -> notUnderstood(reply, intent.confidence());
@@ -319,7 +403,8 @@ public class ConversationOrchestrator {
                                               InboundMessage message,
                                               ResolvedContext context,
                                               Reply reply) {
-        if (confidence.levelOf(expense.confidence()) == ConfidencePolicy.Level.LOW) {
+        ConfidencePolicy.Level level = confidence.levelOf(expense.confidence());
+        if (level == ConfidencePolicy.Level.LOW) {
             return notUnderstood(reply, expense.confidence());
         }
 
@@ -340,8 +425,7 @@ public class ConversationOrchestrator {
         PendingIntent.Option chosen = new PendingIntent.Option(expense.categoryId(),
                 expense.categoryDisplayName());
 
-        if (confidence.levelOf(expense.confidence()) == ConfidencePolicy.Level.MEDIUM
-                && expense.alternatives().size() > 1) {
+        if (level == ConfidencePolicy.Level.MEDIUM && expense.alternatives().size() > 1) {
             List<PendingIntent.Option> options = expense.alternatives().stream()
                     .map(choice -> new PendingIntent.Option(choice.id(), choice.label()))
                     .toList();
@@ -350,6 +434,22 @@ public class ConversationOrchestrator {
                     PendingIntent.chooseCategory(options, expense.amountCents(), expense.description(),
                             message.id()),
                     question, options.stream().map(PendingIntent.Option::label).toList());
+            reply.send(question);
+            return interpreted(expense.confidence());
+        }
+
+        // ADR-0029: confianca media com uma candidata so nao tem opcao a numerar,
+        // mas continua sendo palpite -- vira sim/nao com a despesa ecoada de
+        // volta, em vez de executar. Sem valor, quem pergunta e o passo do valor
+        // logo abaixo: responder quanto foi ja e confirmar a categoria, e duas
+        // perguntas seguidas e o que o SDD deste modulo proibe.
+        if (level == ConfidencePolicy.Level.MEDIUM && expense.hasAmount()) {
+            String question = receipts.confirmExpense(reply.locale, chosen.label(),
+                    expense.amountCents(), expense.description());
+            pendingActions.open(context,
+                    PendingIntent.confirmExpense(chosen, expense.amountCents(), expense.description(),
+                            message.id()),
+                    question, List.of());
             reply.send(question);
             return interpreted(expense.confidence());
         }
@@ -400,11 +500,25 @@ public class ConversationOrchestrator {
                                            InboundMessage message,
                                            ResolvedContext context,
                                            Reply reply) {
-        if (confidence.levelOf(intent.confidence()) == ConfidencePolicy.Level.LOW) {
+        ConfidencePolicy.Level level = confidence.levelOf(intent.confidence());
+        if (level == ConfidencePolicy.Level.LOW) {
             return notUnderstood(reply, intent.confidence());
         }
+        if (level == ConfidencePolicy.Level.MEDIUM) {
+            String question = receipts.confirmListItems(reply.locale,
+                    intent.items().stream().map(ItemDraft::name).toList());
+            pendingActions.open(context, PendingIntent.confirmListItems(intent.items(), message.id()),
+                    question, List.of());
+            reply.send(question);
+            return interpreted(intent.confidence());
+        }
+        return addItems(context, intent.items(), message.id(), reply);
+    }
+
+    private ProcessingOutcome addItems(ResolvedContext context, List<ItemDraft> drafts,
+                                       UUID sourceMessageId, Reply reply) {
         List<AddedItem> added = shopping.addItems(context.householdId(), context.memberId(),
-                intent.items(), message.id());
+                drafts, sourceMessageId);
 
         // O nome de quem pediu antes vem de identity: member nao tem
         // household_id, entao o papel de dominio nao enxerga a tabela (ADR-0022).
@@ -422,12 +536,25 @@ public class ConversationOrchestrator {
                                                 InboundMessage message,
                                                 ResolvedContext context,
                                                 Reply reply) {
-        if (confidence.levelOf(intent.confidence()) == ConfidencePolicy.Level.LOW) {
+        ConfidencePolicy.Level level = confidence.levelOf(intent.confidence());
+        if (level == ConfidencePolicy.Level.LOW) {
             return notUnderstood(reply, intent.confidence());
         }
+        if (level == ConfidencePolicy.Level.MEDIUM) {
+            String question = receipts.confirmMarkPurchased(reply.locale, intent.itemName());
+            pendingActions.open(context,
+                    PendingIntent.confirmMarkPurchased(intent.itemName(), message.id()),
+                    question, List.of());
+            reply.send(question);
+            return interpreted(intent.confidence());
+        }
+        return markPurchased(context, intent.itemName(), message.id(), reply);
+    }
 
+    private ProcessingOutcome markPurchased(ResolvedContext context, String itemName,
+                                            UUID sourceMessageId, Reply reply) {
         MarkPurchasedResult result = shopping.markPurchased(context.householdId(), context.memberId(),
-                intent.itemName());
+                itemName);
         return switch (result) {
             case MarkPurchasedResult.Purchased purchased -> {
                 reply.send(receipts.purchasedReceipt(reply.locale, purchased.name()));
@@ -436,13 +563,19 @@ public class ConversationOrchestrator {
             case MarkPurchasedResult.NotOnTheList missing -> {
                 String question = receipts.offerPurchaseOfUnlistedItem(reply.locale, missing.name());
                 pendingActions.open(context,
-                        PendingIntent.confirmPurchase(missing.name(), message.id()), question, List.of());
+                        PendingIntent.confirmPurchase(missing.name(), sourceMessageId), question, List.of());
                 reply.send(question);
-                yield interpreted(intent.confidence());
+                yield interpreted();
             }
         };
     }
 
+    /**
+     * A excecao declarada da ADR-0029 a faixa media: leitura executa sem
+     * confirmacao. Nao ha o que desfazer numa consulta, e o custo de errar e a
+     * pessoa reler uma lista -- perguntar antes de ler seria friccao sem risco do
+     * outro lado.
+     */
     private ProcessingOutcome queryList(Intent.QueryList intent, ResolvedContext context, Reply reply) {
         if (confidence.levelOf(intent.confidence()) == ConfidencePolicy.Level.LOW) {
             return notUnderstood(reply, intent.confidence());
@@ -452,26 +585,43 @@ public class ConversationOrchestrator {
         return executed(json(Map.of("tool", "consultarLista", "itens", pending.size())));
     }
 
-    private ProcessingOutcome inviteMember(Intent.InviteMember intent, ResolvedContext context, Reply reply) {
-        if (confidence.levelOf(intent.confidence()) == ConfidencePolicy.Level.LOW) {
+    private ProcessingOutcome inviteMember(Intent.InviteMember intent, InboundMessage message,
+                                           ResolvedContext context, Reply reply) {
+        ConfidencePolicy.Level level = confidence.levelOf(intent.confidence());
+        if (level == ConfidencePolicy.Level.LOW) {
             return notUnderstood(reply, intent.confidence());
         }
+        // E a intencao mais cara de errar da lista -- um convite emitido no
+        // palpite da a um telefone errado o caminho para dentro da familia -- e
+        // era a que executava direto em confianca media (ADR-0029).
+        if (level == ConfidencePolicy.Level.MEDIUM) {
+            String question = receipts.confirmInvite(reply.locale, intent.memberName(),
+                    intent.phoneNumber());
+            pendingActions.open(context,
+                    PendingIntent.confirmInvite(intent.memberName(), intent.phoneNumber(), message.id()),
+                    question, List.of());
+            reply.send(question);
+            return interpreted(intent.confidence());
+        }
+        return issueInvite(context, intent.memberName(), intent.phoneNumber(), reply);
+    }
 
+    private ProcessingOutcome issueInvite(ResolvedContext context, String memberName,
+                                          String phoneNumber, Reply reply) {
         InviteIssuer.IssueResult result = invites.issue(context.householdId(), context.memberId(),
-                reply.channel, intent.memberName(), intent.phoneNumber());
+                reply.channel, memberName, phoneNumber);
         return switch (result) {
             case InviteIssuer.IssueResult.Issued issued -> {
                 reply.send(receipts.inviteIssued(reply.locale, issued.invite()));
-                yield executed(json(Map.of("tool", "convidarMembro",
-                        "telefone", intent.phoneNumber())));
+                yield executed(json(Map.of("tool", "convidarMembro", "telefone", phoneNumber)));
             }
             case InviteIssuer.IssueResult.NotOwner ignored -> {
                 reply.send(receipts.inviteNotOwner(reply.locale));
-                yield interpreted(intent.confidence());
+                yield interpreted();
             }
             case InviteIssuer.IssueResult.AlreadyInvited already -> {
                 reply.send(receipts.inviteAlreadyPending(reply.locale, already.phoneNumber()));
-                yield interpreted(intent.confidence());
+                yield interpreted();
             }
         };
     }

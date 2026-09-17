@@ -60,6 +60,17 @@ Funcionalidade: Lista de compras compartilhada por chat
     Então nenhum item é marcado como comprado
     E "Bruno" recebe uma pergunta oferecendo registrar "Feijão" como comprado
 
+  # ADR-0030. Até 2026-09-16 a consulta e o índice único comparavam por
+  # `lower(name)`, então este caso inseria um segundo item — sem pergunta e sem
+  # aviso, que é o pior desfecho possível dos dois.
+  @saneamento
+  Cenário: Item escrito sem acento é reconhecido, não duplicado
+    Dado que o item "Café" já está pendente na lista
+    Quando "Bruno" envia "acabou cafe"
+    Então a lista tem exatamente um item pendente
+    E a lista continua com um único item "Café" pendente
+    E "Bruno" é informado de que o item já estava na lista, pedido por "Ana"
+
   Cenário: Reentrega da mesma mensagem pelo provedor
     Quando o provedor entrega duas vezes a mesma mensagem "acabou o arroz" de "Ana"
     Então o item "Arroz" entra na lista de compras uma única vez

@@ -1,6 +1,7 @@
 package com.novoapp.finance;
 
 import com.novoapp.common.tenancy.HouseholdScoped;
+import com.novoapp.common.text.Normalization;
 import com.novoapp.finance.entity.Category;
 import com.novoapp.finance.entity.EntryKind;
 import com.novoapp.finance.repository.CategoryRepository;
@@ -84,6 +85,8 @@ public class CategoryService {
         category.householdId = householdId;
         category.parentCategoryId = parentCategoryId;
         category.name = trimmed;
+        // A forma que o indice unico de irmaos compara (ADR-0030).
+        category.nameNormalized = Normalization.of(trimmed);
         // Subcategoria herda o kind do pai (ADR-0016). Nesta etapa so ha criacao
         // por despesa, entao herdar e o mesmo que fixar EXPENSE -- quando
         // registrarReceita existir, o kind passa a vir de quem chama.

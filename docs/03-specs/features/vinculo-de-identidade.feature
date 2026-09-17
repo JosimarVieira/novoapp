@@ -57,6 +57,18 @@ Funcionalidade: Vínculo de identidade (onboarding)
     E "Ana" recebe o link do convite
     E o sistema não envia o link para "Bruno" — quem repassa é "Ana"
 
+  # ADR-0029: emitir convite é a intenção mais cara de errar da aplicação — um
+  # número errado ganha entrada na família —, e era uma das que executavam
+  # direto em confiança média.
+  @saneamento
+  Cenário: Convite com confiança média pede confirmação antes de ser criado
+    Dado que existe o household "Silva" com "Ana" como "OWNER"
+    Quando "Ana" envia "acho que era pra convidar Bruno, +5511900000002"
+    Então nenhum convite é criado ainda
+    E "Ana" recebe uma pergunta pedindo para confirmar o convite para "+5511900000002"
+    Quando "Ana" responde "sim"
+    Então um convite é criado para o telefone "+5511900000002" com status "PENDING"
+
   @etapa1
   Cenário: Convidado aceita dentro do prazo com o telefone certo
     Dado que existe um convite "PENDING" do household "Silva" para o telefone "+5511900000002"
@@ -99,6 +111,12 @@ Funcionalidade: Vínculo de identidade (onboarding)
     Então a pessoa recebe um aviso de que só é possível entrar mediante convite
     E a pessoa recebe a opção de criar a própria família em vez disso
 
+  # Corrigido em 2026-09-16: este cenário exigia "a informação de como trocar de
+  # família ativa", e o bot cumpria mandando "Para trocar, diga: usar Silva" —
+  # comando que a ADR-0007 decide mas que nunca foi implementado. O cenário
+  # estava verde afirmando uma promessa que o produto recusa. Prevalece avisar
+  # para onde as mensagens vão, que é o que a ADR-0007 exige para erro de
+  # contexto ficar visível; ensinar a troca volta quando o comando existir.
   @etapa1
   Cenário: Pessoa que já é membro de outra família aceita um convite novo
     Dado que "Carla" já é membro do household "Costa" com o telefone "+5511900000005"
@@ -106,4 +124,4 @@ Funcionalidade: Vínculo de identidade (onboarding)
     Quando "+5511900000005" abre o link do convite e compartilha o contato "+5511900000005"
     Então "Carla" vira membro do household "Silva" também, reaproveitando a mesma pessoa
     E o "active_household_id" de "Carla" continua apontando pro household "Costa"
-    E "Carla" recebe a confirmação de entrada na família "Silva", com a informação de como trocar de família ativa
+    E "Carla" recebe a confirmação de entrada na família "Silva", avisando que as mensagens continuam indo para "Costa"

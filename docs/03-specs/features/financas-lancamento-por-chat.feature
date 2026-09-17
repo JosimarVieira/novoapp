@@ -152,6 +152,52 @@ Funcionalidade: Lançamento de despesa por chat
     E a despesa de R$ 50,00 em "Mercado" continua sem estorno
     E "Ana" recebe a confirmação de que a pergunta foi cancelada, não de um estorno
 
+  # ADR-0029. Três furos encontrados na auditoria de 2026-09-14, todos com a
+  # mesma raiz: `PendingAction` foi construída como "pergunta sobre uma despesa"
+  # e não como "intenção esperando confirmação".
+
+  @saneamento
+  Cenário: Confiança média com uma única categoria candidata pergunta antes de lançar
+    Quando "Ana" envia "acho que foi mercado, 50"
+    Então nenhuma despesa é registrada ainda
+    E "Ana" recebe uma pergunta pedindo para confirmar a despesa de R$ 50,00 em "Mercado"
+    Quando "Ana" responde "sim"
+    Então uma despesa de R$ 50,00 é registrada na categoria "Mercado"
+
+  @saneamento
+  Cenário: Mensagem sobre outro assunto não vira correção da categoria pendente
+    Quando "Ana" envia "pet shop 80"
+    E "Ana" envia "acabou o arroz"
+    Então nenhuma categoria é criada
+    E nenhuma despesa é registrada
+    E o item "Arroz" entra na lista de compras com status pendente
+    Quando "Ana" responde "sim"
+    Então nenhuma categoria é criada
+    E nenhuma despesa é registrada
+
+  # ADR-0030. `nlu` já casava acento ao reconhecer categoria existente; a busca
+  # da categoria-pai na correção livre é que ficara de fora, e criava uma raiz
+  # homônima em silêncio.
+  @saneamento
+  Cenário: Categoria-pai escrita sem acento é reconhecida, não duplicada
+    Dado que o household "Silva" também tem a categoria de despesa "Alimentação"
+    Quando "Ana" envia "restaurante eu e esposa 90"
+    Então "Ana" recebe uma única pergunta oferecendo criar a categoria "Restaurante"
+    Quando "Ana" responde "restaurante dentro de alimentacao"
+    Então a categoria de despesa "Restaurante" é criada no household "Silva" como subcategoria de "Alimentação"
+    E o household "Silva" continua com uma única categoria chamada "Alimentação"
+    E uma despesa de R$ 90,00 é registrada nessa categoria
+
+  @saneamento
+  Cenário: Responder com o nome da opção, e não com o número, continua sendo resposta
+    Dado que o household "Silva" também tem a categoria de despesa "Mercado livre"
+    Quando "Ana" envia "mercado 50"
+    E "Ana" responde "mercado"
+    Então nenhuma despesa é registrada ainda
+    E "Ana" recebe uma pergunta com as opções numeradas "Mercado" e "Mercado livre"
+    Quando "Ana" responde "1"
+    Então uma despesa de R$ 50,00 é registrada na categoria "Mercado"
+
   @etapa1
   Cenário: Reentrega da mesma mensagem pelo provedor
     Quando o provedor entrega duas vezes a mesma mensagem "mercado 50" de "Ana"

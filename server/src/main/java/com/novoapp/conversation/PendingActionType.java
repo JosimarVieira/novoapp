@@ -35,5 +35,16 @@ public enum PendingActionType {
     ASK_AMOUNT,
 
     /** "Nao achei 'Feijao' na lista. Registro como comprado?" */
-    CONFIRM_PURCHASE
+    CONFIRM_PURCHASE,
+
+    /**
+     * Confianca media (ADR-0004, ADR-0029): a intencao inteira ficou guardada
+     * esperando <code>sim</code>.
+     *
+     * <p>E o tipo que faz a faixa media valer para toda intencao, e nao so para
+     * despesa entre categorias parecidas. O que executar no <code>sim</code>
+     * esta em {@link PendingIntent#deferred()} -- nao e deduzido deste tipo,
+     * que e justamente o acoplamento que a ADR-0029 veio desfazer.
+     */
+    CONFIRM_INTENT
 }

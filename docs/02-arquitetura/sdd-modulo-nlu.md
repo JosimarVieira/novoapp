@@ -2,7 +2,7 @@
 tipo: sdd
 modulo: nlu
 status: escrito
-atualizado_em: 2026-09-07
+atualizado_em: 2026-09-16
 adrs:
   - ADR-0004
   - ADR-0009
@@ -10,6 +10,7 @@ adrs:
   - ADR-0023
   - ADR-0024
   - ADR-0026
+  - ADR-0029
 ---
 
 # SDD — Módulo `nlu`
@@ -25,9 +26,21 @@ domínio.
 
 Cinco tools no contexto de uma mensagem comum — `registrarDespesa`,
 `adicionarItemLista`, `marcarItemComprado`, `consultarLista`,
-`convidarMembro` — mais uma sexta, `confirmarCategoriaSugerida`, declarada
-sozinha e só no momento de ler a correção livre de uma pendência de categoria
+`convidarMembro` — mais uma sexta, `confirmarCategoriaSugerida`, que só entra
+quando há uma categoria oferecida a corrigir
 ([ADR-0026](../01-adr/0026-hierarquia-na-criacao-de-categoria-por-chat.md)).
+
+**Corrigido em 2026-09-16 ([ADR-0029](../01-adr/0029-intencao-adiada-e-precedencia-de-mensagem-nova.md))**:
+a sexta tool era declarada **sozinha** nesse momento, e isso era o furo. Com um
+cardápio de uma opção só, o modelo não tinha como dizer "isto não responde à
+pergunta" — uma mensagem sobre outro assunto podia virar categoria com nome
+errado, levando junto o valor guardado na pendência. Agora a chamada com
+pergunta em aberto leva as cinco do dia a dia **mais** a correção, e o modelo
+escolhe entre responder e mudar de assunto. Continua sendo uma chamada por
+mensagem: o que sumiu foi a *segunda*, não a primeira.
+
+O que `nlu` **não** decide, aqui como em tudo: se a mudança de assunto vale.
+Isso é confiança, e confiança é política de `conversation`.
 
 **`convidarMembro` não está na lista de tools que a ADR-0004 enumera.** Aquela
 lista descreve o mecanismo com os fluxos de domínio conhecidos em 2026-08-31, e

@@ -11,9 +11,15 @@ import java.util.List;
  * provedor na Etapa 5 ser configuracao e nao reescrita (ADR-0009), e o que
  * permite o stub dos testes de aceitacao imitar o resultado em vez da API.
  *
- * @param questionAsked so no proposito {@link Purpose#CATEGORY_CORRECTION}: a
- *        pergunta original guardada na {@code pending_action}, que e o contexto
- *        da segunda chamada (ADR-0026)
+ * @param questionAsked so no proposito {@link Purpose#ANSWERING_PENDING}: a
+ *        pergunta que o bot fez e que esta guardada na {@code pending_action}.
+ *        E o contexto que permite ao modelo decidir se a mensagem responde a
+ *        pergunta ou muda de assunto (ADR-0029)
+ * @param categoryCorrectionOffered a pendencia aberta e de criacao de categoria,
+ *        entao <code>confirmarCategoriaSugerida</code> entra no cardapio junto
+ *        das tools do dia a dia (ADR-0026 + ADR-0029). Falso nos demais tipos:
+ *        declarar a correcao onde nao ha categoria a corrigir so a poria
+ *        competindo a toa
  * @param expenseCategories rotulos das categorias de despesa que ja existem.
  *        Vazio e caso normal em household novo (ADR-0013) -- e o que faz a
  *        propriedade {@code categoria} sumir do schema (ADR-0024)
@@ -21,6 +27,7 @@ import java.util.List;
 public record InterpretationRequest(Purpose purpose,
                                     String text,
                                     String questionAsked,
+                                    boolean categoryCorrectionOffered,
                                     List<String> expenseCategories,
                                     List<String> pendingListItems) {
 
@@ -28,23 +35,31 @@ public record InterpretationRequest(Purpose purpose,
         /** Mensagem comum: todas as tools do dia a dia entram no contexto. */
         GENERAL,
         /**
-         * Resposta livre a uma pergunta de criacao de categoria. So
-         * <code>confirmarCategoriaSugerida</code> e declarada -- e a excecao a
-         * regra 6 que a ADR-0026 abriu, e ela vale so pra este momento.
+         * Resposta que nao e atalho a uma pergunta em aberto.
+         *
+         * <p>Antes da ADR-0029 este proposito declarava <b>so</b>
+         * <code>confirmarCategoriaSugerida</code>, e existia so para pendencia
+         * de categoria. O modelo nao tinha como dizer "isto nao responde a
+         * pergunta", e uma mensagem sobre outro assunto podia virar categoria
+         * errada levando junto o valor guardado na pendencia. Agora o cardapio
+         * e o mesmo do dia a dia, mais a correcao quando ela faz sentido.
          */
-        CATEGORY_CORRECTION
+        ANSWERING_PENDING
     }
 
     public static InterpretationRequest general(String text,
                                                 List<String> expenseCategories,
                                                 List<String> pendingListItems) {
-        return new InterpretationRequest(Purpose.GENERAL, text, null, expenseCategories, pendingListItems);
+        return new InterpretationRequest(Purpose.GENERAL, text, null, false,
+                expenseCategories, pendingListItems);
     }
 
-    public static InterpretationRequest categoryCorrection(String text,
-                                                           String questionAsked,
-                                                           List<String> expenseCategories) {
-        return new InterpretationRequest(Purpose.CATEGORY_CORRECTION, text, questionAsked,
-                expenseCategories, List.of());
+    public static InterpretationRequest answeringPending(String text,
+                                                         String questionAsked,
+                                                         boolean categoryCorrectionOffered,
+                                                         List<String> expenseCategories,
+                                                         List<String> pendingListItems) {
+        return new InterpretationRequest(Purpose.ANSWERING_PENDING, text, questionAsked,
+                categoryCorrectionOffered, expenseCategories, pendingListItems);
     }
 }

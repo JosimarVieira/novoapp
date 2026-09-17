@@ -59,6 +59,16 @@ public class StubMessageInterpreter implements MessageInterpreter {
             Pattern.compile("^(\\d+(?:[.,]\\d+)?)\\s*(kg|g|l|ml|un|unidades?|caixas?|pacotes?)?\\s*(?:de\\s+)?(.+)$");
     private static final Pattern PHONE = Pattern.compile("(\\+\\d{8,15})");
 
+    /** O marcador de hierarquia da ADR-0026, e o que faz o stub ler uma correcao. */
+    private static final String CORRECTION_MARKER = " dentro de ";
+
+    /**
+     * Hesitacoes que rebaixam a confianca para {@link #AMBIGUOUS}, mantendo a
+     * interpretacao do resto da mensagem. Do mais especifico para o mais curto:
+     * o primeiro que casar e o que sai.
+     */
+    private static final List<String> HEDGES = List.of("acho que era pra ", "acho que foi ", "acho que ");
+
     private static final List<String> ADD_ITEM_PREFIXES =
             List.of("acabou o ", "acabou a ", "acabou os ", "acabou as ", "acabou ",
                     "precisa de ", "precisamos de ", "falta o ", "falta a ", "falta ", "comprar ");
@@ -110,8 +120,32 @@ public class StubMessageInterpreter implements MessageInterpreter {
         String original = request.text().trim();
         String normalized = normalize(original);
 
-        if (request.purpose() == InterpretationRequest.Purpose.CATEGORY_CORRECTION) {
+        // ADR-0029: com pergunta em aberto, o cardapio e o do dia a dia mais a
+        // correcao de categoria. O marcador "dentro de" e o que faz o stub
+        // escolher a correcao -- e o mesmo marcador que a ADR-0026 usa como
+        // exemplo, e os dois cenarios de correcao escritos o trazem. Sem ele, a
+        // mensagem segue para a interpretacao comum, que e o que reproduz "a
+        // pessoa mudou de assunto".
+        if (request.purpose() == InterpretationRequest.Purpose.ANSWERING_PENDING
+                && request.categoryCorrectionOffered()
+                && normalized.contains(CORRECTION_MARKER)) {
             return categoryCorrection(original, normalized);
+        }
+
+        // Confianca media sob demanda: mensagem que comeca com uma hesitacao vale
+        // como qualquer outra, com a confianca rebaixada. E a "Intent fixa" da
+        // estrategia-de-testes.md -- sem isso nao ha como exercitar a faixa media
+        // fora do unico caso em que duas categorias competem pelo mesmo nome, e
+        // era justamente por isso que a faixa media da ADR-0004 passou duas
+        // etapas sem ninguem notar que quase nao existia.
+        for (String hedge : HEDGES) {
+            if (normalized.startsWith(hedge)) {
+                return interpret(new InterpretationRequest(request.purpose(),
+                        original.substring(hedge.length()).trim(), request.questionAsked(),
+                        request.categoryCorrectionOffered(), request.expenseCategories(),
+                        request.pendingListItems()))
+                        .map(StubMessageInterpreter::withMediumConfidence);
+            }
         }
 
         // Ordem importa: "comprei o arroz" tambem casaria com a regra de despesa
@@ -135,6 +169,17 @@ public class StubMessageInterpreter implements MessageInterpreter {
         }
 
         return expense(original, normalized, request.expenseCategories());
+    }
+
+    /**
+     * Troca so a confianca, preservando nome da tool e argumentos. O parametro
+     * <code>confianca</code> existe em toda tool (ADR-0004), entao a troca e
+     * uniforme e nao precisa saber de qual tool se trata.
+     */
+    private static ToolCall withMediumConfidence(ToolCall call) {
+        Map<String, Object> arguments = new LinkedHashMap<>(call.arguments());
+        arguments.put(RegisterExpenseTool.CONFIDENCE_PARAMETER, AMBIGUOUS);
+        return new ToolCall(call.toolName(), arguments);
     }
 
     // ------------------------------------------------------------------

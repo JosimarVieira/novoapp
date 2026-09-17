@@ -1,6 +1,7 @@
 package com.novoapp.identity.onboarding;
 
-import java.text.Normalizer;
+import com.novoapp.common.text.Normalization;
+
 import java.util.List;
 import java.util.Locale;
 
@@ -37,13 +38,9 @@ final class Answers {
     }
 
     /** Tira acento e caixa: "Nao", "nao" e "nAo" sao a mesma resposta. */
+    /** Delega a {@link Normalization} (ADR-0030); aqui so o nulo vira vazio. */
     static String normalize(String text) {
-        if (text == null) {
-            return "";
-        }
-        String stripped = Normalizer.normalize(text.trim().toLowerCase(Locale.ROOT), Normalizer.Form.NFD)
-                .replaceAll("\\p{InCombiningDiacriticalMarks}+", "");
-        return stripped;
+        return text == null ? "" : Normalization.of(text);
     }
 
     private static boolean startsWithAny(String normalized, List<String> options) {
