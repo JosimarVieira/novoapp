@@ -175,6 +175,20 @@ Funcionalidade: Lançamento de despesa por chat
     Então nenhuma categoria é criada
     E nenhuma despesa é registrada
 
+  # Achado em uso real em 2026-09-17, e não pela suíte: "Pet shop 80" chegava do
+  # Mistral com confiança 0,3 — o modelo se declara inseguro justamente quando
+  # tem de sugerir nome novo — e a faixa baixa da ADR-0004 engolia a mensagem
+  # antes de alguém reparar que havia um nome de categoria ali. O usuário recebia
+  # "não entendi essa" com o bot sabendo exatamente o que ele quis.
+  @saneamento
+  Cenário: Categoria inexistente oferece criação mesmo com confiança baixa
+    Quando "Ana" envia "talvez pet shop 80"
+    Então nenhuma despesa é registrada ainda
+    E "Ana" recebe uma única pergunta oferecendo criar a categoria "Pet shop"
+    Quando "Ana" responde "sim"
+    Então a categoria de despesa "Pet shop" é criada no household "Silva"
+    E uma despesa de R$ 80,00 é registrada nessa categoria
+
   # ADR-0030. `nlu` já casava acento ao reconhecer categoria existente; a busca
   # da categoria-pai na correção livre é que ficara de fora, e criava uma raiz
   # homônima em silêncio.

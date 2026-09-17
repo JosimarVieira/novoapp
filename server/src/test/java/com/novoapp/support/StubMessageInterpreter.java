@@ -53,6 +53,8 @@ public class StubMessageInterpreter implements MessageInterpreter {
 
     private static final double CERTAIN = 1.0d;
     private static final double AMBIGUOUS = 0.5d;
+    /** Abaixo do limiar `low`: e a faixa em que o Mistral real devolve categoria sugerida. */
+    private static final double UNSURE = 0.2d;
 
     private static final Pattern AMOUNT = Pattern.compile("(?<![\\d,.])(\\d+(?:[.,]\\d{1,2})?)(?![\\d,.])");
     private static final Pattern QUANTITY =
@@ -63,11 +65,22 @@ public class StubMessageInterpreter implements MessageInterpreter {
     private static final String CORRECTION_MARKER = " dentro de ";
 
     /**
-     * Hesitacoes que rebaixam a confianca para {@link #AMBIGUOUS}, mantendo a
-     * interpretacao do resto da mensagem. Do mais especifico para o mais curto:
-     * o primeiro que casar e o que sai.
+     * Hesitacoes que rebaixam a confianca, mantendo a interpretacao do resto da
+     * mensagem. Do mais especifico para o mais curto: o primeiro que casar e o
+     * que sai.
+     *
+     * <p>Nenhuma leva acento, de proposito: o prefixo e casado contra o texto
+     * normalizado e recortado do texto original, e so coincidem em comprimento
+     * enquanto nao ha marca de acento no meio.
      */
-    private static final List<String> HEDGES = List.of("acho que era pra ", "acho que foi ", "acho que ");
+    private record Hedge(String prefix, double confidence) {
+    }
+
+    private static final List<Hedge> HEDGES = List.of(
+            new Hedge("acho que era pra ", AMBIGUOUS),
+            new Hedge("acho que foi ", AMBIGUOUS),
+            new Hedge("acho que ", AMBIGUOUS),
+            new Hedge("talvez ", UNSURE));
 
     private static final List<String> ADD_ITEM_PREFIXES =
             List.of("acabou o ", "acabou a ", "acabou os ", "acabou as ", "acabou ",
@@ -138,13 +151,13 @@ public class StubMessageInterpreter implements MessageInterpreter {
         // fora do unico caso em que duas categorias competem pelo mesmo nome, e
         // era justamente por isso que a faixa media da ADR-0004 passou duas
         // etapas sem ninguem notar que quase nao existia.
-        for (String hedge : HEDGES) {
-            if (normalized.startsWith(hedge)) {
+        for (Hedge hedge : HEDGES) {
+            if (normalized.startsWith(hedge.prefix())) {
                 return interpret(new InterpretationRequest(request.purpose(),
-                        original.substring(hedge.length()).trim(), request.questionAsked(),
+                        original.substring(hedge.prefix().length()).trim(), request.questionAsked(),
                         request.categoryCorrectionOffered(), request.expenseCategories(),
                         request.pendingListItems()))
-                        .map(StubMessageInterpreter::withMediumConfidence);
+                        .map(call -> withConfidence(call, hedge.confidence()));
             }
         }
 
@@ -176,9 +189,9 @@ public class StubMessageInterpreter implements MessageInterpreter {
      * <code>confianca</code> existe em toda tool (ADR-0004), entao a troca e
      * uniforme e nao precisa saber de qual tool se trata.
      */
-    private static ToolCall withMediumConfidence(ToolCall call) {
+    private static ToolCall withConfidence(ToolCall call, double confidence) {
         Map<String, Object> arguments = new LinkedHashMap<>(call.arguments());
-        arguments.put(RegisterExpenseTool.CONFIDENCE_PARAMETER, AMBIGUOUS);
+        arguments.put(RegisterExpenseTool.CONFIDENCE_PARAMETER, confidence);
         return new ToolCall(call.toolName(), arguments);
     }
 
