@@ -2,7 +2,7 @@
 tipo: sdd
 modulo: finance
 status: escrito
-atualizado_em: 2026-09-08
+atualizado_em: 2026-09-16
 adrs:
   - ADR-0010
   - ADR-0011
@@ -13,6 +13,9 @@ adrs:
   - ADR-0024
   - ADR-0025
   - ADR-0026
+  - ADR-0030
+  - ADR-0031
+  - ADR-0032
 ---
 
 # SDD — Módulo `finance`
@@ -94,6 +97,15 @@ cenário escrito: a busca é na árvore toda, e achar uma subcategoria recusa.
 existisse, o enum da tool teria batido e não haveria pergunta nenhuma. Mas duas
 confirmações da mesma pendência, ou uma corrida entre dois membros, não podem
 virar violação de índice único no meio de um lançamento.
+
+**A busca do pai casa pela forma normalizada** — minúscula e sem acento
+([ADR-0030](../01-adr/0030-correspondencia-de-nome-por-forma-normalizada.md)),
+pela coluna `name_normalized`, que é também o que o índice único de irmãs usa.
+Corrigido em 2026-09-16: era `lower(name)`, e então
+`restaurante dentro de alimentacao` criava uma raiz "Alimentacao" ao lado da
+"Alimentação" existente — o mesmo furo que a ADR-0026 veio fechar, entrando por
+outra porta. Note que `nlu` **já** normalizava acento ao casar a categoria
+escolhida pelo modelo; era só este caminho que ficara de fora.
 
 ## Depende de
 

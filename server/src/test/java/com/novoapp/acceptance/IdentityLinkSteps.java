@@ -264,6 +264,19 @@ public class IdentityLinkSteps {
         world.inviteTokens.put(phoneNumber, (String) rows.get(0).get(1));
     }
 
+    @Entao("^nenhum convite é criado ainda$")
+    public void noInviteCreatedYet() {
+        assertThat(fixtures.count("SELECT count(*) FROM household_invite")).isZero();
+    }
+
+    /** ADR-0029: em confianca media o convite espera um "sim", com o numero ecoado de volta. */
+    @E("^\"([^\"]*)\" recebe uma pergunta pedindo para confirmar o convite para \"([^\"]*)\"$")
+    public void receivesInviteConfirmation(String actor, String phoneNumber) {
+        assertThat(world.lastReplyTo(actor))
+                .contains(phoneNumber)
+                .contains("Confirma?");
+    }
+
     /** Prazo fixo da ADR-0020, conferido no dado gravado e nao no texto do recibo. */
     @E("^o convite expira em 7 dias$")
     public void inviteExpiresInSevenDays() {
@@ -344,11 +357,13 @@ public class IdentityLinkSteps {
         assertThat(activeHouseholdOf(memberName)).isEqualTo(world.households.get(householdName));
     }
 
-    @E("^\"([^\"]*)\" recebe a confirmação de entrada na família \"([^\"]*)\", com a informação de como trocar de família ativa$")
-    public void receivesJoinConfirmationWithSwitchHint(String memberName, String householdName) {
+    @E("^\"([^\"]*)\" recebe a confirmação de entrada na família \"([^\"]*)\", "
+            + "avisando que as mensagens continuam indo para \"([^\"]*)\"$")
+    public void receivesJoinConfirmationNamingTheActiveHousehold(String memberName, String joinedHousehold,
+                                                                 String activeHousehold) {
         assertThat(world.lastReplyTo(memberName))
-                .contains("faz parte da família \"" + householdName + "\"")
-                .contains("Para trocar, diga: usar " + householdName);
+                .contains("faz parte da família \"" + joinedHousehold + "\"")
+                .contains("continuam indo para a família \"" + activeHousehold + "\"");
     }
 
     // ------------------------------------------------------------------

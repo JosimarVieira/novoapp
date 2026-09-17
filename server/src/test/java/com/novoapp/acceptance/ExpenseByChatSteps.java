@@ -1,5 +1,6 @@
 package com.novoapp.acceptance;
 
+import com.novoapp.common.text.Normalization;
 import com.novoapp.support.Fixtures;
 import io.cucumber.java.Before;
 import io.cucumber.java.pt.Dado;
@@ -237,6 +238,21 @@ public class ExpenseByChatSteps {
      * monta "Alimentacao" e "Restaurante" por fixture antes de tentar o terceiro
      * nivel.
      */
+    /**
+     * ADR-0030. Asserta a ausencia do furo, e nao a presenca do conserto: antes
+     * de a busca do pai casar por forma normalizada, "alimentacao" criava uma
+     * raiz homonima e este passo encontraria duas.
+     */
+    @E("^o household \"([^\"]*)\" continua com uma única categoria chamada \"([^\"]*)\"$")
+    public void householdHasASingleCategoryNamed(String householdName, String categoryName) {
+        UUID householdId = world.households.get(householdName);
+        assertThat(fixtures.count("""
+                SELECT count(*) FROM category
+                 WHERE household_id = ? AND archived_at IS NULL AND name_normalized = ?""",
+                householdId, Normalization.of(categoryName)))
+                .isEqualTo(1);
+    }
+
     @Entao("^nenhuma categoria é criada$")
     public void noCategoryCreated() {
         assertThat(fixtures.count("SELECT count(*) FROM category")).isEqualTo(world.categories.size());
@@ -356,6 +372,18 @@ public class ExpenseByChatSteps {
         assertThat(world.lastReplyTo(actor))
                 .contains("1) " + first)
                 .contains("2) " + second);
+    }
+
+    /**
+     * ADR-0029. O eco do que foi entendido e o que faz esta pergunta valer a
+     * pena: sem ele, "confirma?" obrigaria a pessoa a lembrar o que escreveu.
+     */
+    @E("^\"([^\"]*)\" recebe uma pergunta pedindo para confirmar a despesa de R\\$ ([\\d.,]+) em \"([^\"]*)\"$")
+    public void receivesExpenseConfirmation(String actor, String amount, String category) {
+        assertThat(world.lastReplyTo(actor))
+                .contains(category)
+                .contains("R$ " + amount)
+                .contains("Confirma?");
     }
 
     @E("^\"([^\"]*)\" recebe uma pergunta curta pedindo o valor$")

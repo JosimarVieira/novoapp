@@ -2,7 +2,7 @@
 tipo: sdd
 modulo: conversation
 status: escrito
-atualizado_em: 2026-09-08
+atualizado_em: 2026-09-16
 adrs:
   - ADR-0004
   - ADR-0015
@@ -11,6 +11,8 @@ adrs:
   - ADR-0024
   - ADR-0025
   - ADR-0026
+  - ADR-0029
+  - ADR-0031
 ---
 
 # SDD — Módulo `conversation`
@@ -37,7 +39,8 @@ tela não).
 
 ## Depende de
 
-- `nlu` — interpretação, e a segunda chamada ao modelo da correção livre de
+- `nlu` — interpretação, inclusive a da mensagem que chega com pergunta em
+  aberto no fio ([ADR-0029](../01-adr/0029-intencao-adiada-e-precedencia-de-mensagem-nova.md)) — que era uma segunda chamada da correção livre de
   categoria ([ADR-0026](../01-adr/0026-hierarquia-na-criacao-de-categoria-por-chat.md)).
 - `finance` — registrar despesa, criar categoria confirmada, estornar.
 - `shopping` — adicionar item, marcar comprado, consultar a lista. Aresta nova
@@ -55,8 +58,12 @@ conversation/
   ConversationOrchestrator  -- process(InboundMessage, ResolvedContext, canal, externalId)
   ConfidencePolicy          -- as tres faixas da ADR-0004, com os limiares vindos de config
   PendingActionService      -- abre, encontra e resolve pendencia (o mecanismo generico)
-  PendingIntent             -- o conteudo de intent_json, com o discriminador de tipo
-  PendingActionType         -- CREATE_CATEGORY | CHOOSE_CATEGORY | ASK_AMOUNT | CONFIRM_PURCHASE
+  PendingIntent             -- o conteudo de intent_json: o tipo da pergunta e,
+                               desde a ADR-0029, a acao adiada (deferred)
+  PendingActionType         -- a pergunta: CREATE_CATEGORY | CHOOSE_CATEGORY |
+                               ASK_AMOUNT | CONFIRM_PURCHASE | CONFIRM_INTENT
+  PendingIntent.DeferredAction -- a acao: REGISTER_EXPENSE | ADD_LIST_ITEMS |
+                               MARK_PURCHASED | ADD_ALREADY_PURCHASED | INVITE_MEMBER
   ShortCircuit              -- sim / nao / desfazer / numero, sem LLM (regra 6)
   ReceiptFormatter          -- todo texto que este modulo manda pro chat
   ProcessingOutcome         -- o que aconteceu, devolvido pra channel registrar
@@ -200,7 +207,10 @@ valer (responder `sim` não pode gastar chamada de modelo) e o que dá ao
    `nlu.interpret`.
 6. `ConfidencePolicy` classifica a confiança devolvida:
    - **alta** → executa e responde recibo;
-   - **média** → UMA pergunta com as opções numeradas que `nlu` montou;
+   - **média** → UMA pergunta: as opções numeradas que `nlu` montou quando há
+     mais de uma, ou a intenção ecoada de volta em `sim`/`não` quando há uma só.
+     Vale para **toda intenção que escreve**, e não só para despesa entre
+     categorias parecidas ([ADR-0029](../01-adr/0029-intencao-adiada-e-precedencia-de-mensagem-nova.md));
    - **baixa** → pergunta aberta curta, sem adivinhar.
 7. Dois casos escapam da faixa de confiança, de propósito:
    - **categoria inexistente** ([ADR-0024](../01-adr/0024-categoria-sugerida-por-texto-livre.md))
@@ -211,6 +221,10 @@ valer (responder `sim` não pode gastar chamada de modelo) e o que dá ao
    - E a **descrição** ([ADR-0023](../01-adr/0023-descricao-de-lancamento-extraida-pelo-llm.md))
      nunca pergunta nada: ausência dela não reduz confiança e não impede
      execução.
+   - A terceira, acrescentada pela ADR-0029: **consultar a lista** executa em
+     qualquer confiança acima da baixa. Não há o que desfazer numa leitura, e
+     perguntar antes de ler é fricção sem risco do outro lado. É a única
+     intenção fora da regra, e ela não escreve nada.
 8. `ReceiptFormatter` monta o texto e `OutboundMessagePort` envia. O recibo ecoa
    a descrição quando ela existe (ADR-0023) e a hierarquia quando a categoria
    tem pai (ADR-0026). O household é nomeado **só** quando a pessoa tem mais de
@@ -252,11 +266,57 @@ provavelmente uma correção de registro na ADR-0019.
   `ReceiptFormatter` — é a regra da ADR-0015 verificada, e não confiada à
   revisão.
 
+## A pendência guarda o que executar (decidido em 2026-09-16)
+
+O gatilho de revisão da Etapa 3 abaixo mandava verificar se "fechar compra sem
+informar valor" caberia no mecanismo existente. **Não cabia**: `ASK_AMOUNT` era
+genérico no nome e específico na execução — quando a resposta chegava, o
+orquestrador chamava `registrarDespesa` direto e lia a primeira opção guardada
+como id de categoria.
+
+A [ADR-0029](../01-adr/0029-intencao-adiada-e-precedencia-de-mensagem-nova.md)
+separou as duas coisas que estavam no mesmo campo:
+
+- `PendingActionType` descreve **a pergunta** — o que falta saber;
+- `PendingIntent.deferred` descreve **a ação** — o que fazer quando souber.
+
+`executeDeferred` é um `switch` sobre a segunda, e não sobre a primeira.
+Acrescentar `fecharCompra` na Etapa 3 passa a ser um valor no enum e um caso ali
+— sem tipo de pendência especial, que era o que o gatilho pedia.
+
+O tipo `CONFIRM_INTENT` entrou junto: é a pendência da confiança média, a que
+guarda a intenção inteira esperando um `sim`. `CONFIRM_PURCHASE` continua
+separada dele porque a ação é outra — registrar como comprado algo que **nunca
+esteve** na lista não é o mesmo que baixar um item que está.
+
+## Mensagem nova com pergunta em aberto (decidido em 2026-09-16)
+
+O último gatilho desta seção — "se 'repete a pergunta' se mostrar irritante na
+prática" — foi fechado pela ADR-0029, e por um motivo mais forte que irritação:
+em pendência de criação de categoria, a mensagem sobre outro assunto ia para uma
+chamada em que **só** `confirmarCategoriaSugerida` estava declarada. O modelo não
+tinha como dizer "isto não responde à pergunta", e a mensagem podia virar
+categoria errada levando junto o valor guardado na pendência.
+
+Agora: uma chamada, com as ferramentas do dia a dia mais a correção quando há
+categoria oferecida a corrigir. Superar a pergunta exige **confiança alta** —
+superar é destrutivo, e quem responde `mercado` em vez de `1` está respondendo.
+A pendência superada tem `expires_at` gravado para agora: para de interceptar o
+fio, continua sem `resolution`, continua na central de pendências.
+
+Duas consequências que valem registro:
+
+- mensagem que não é atalho com pendência aberta passa a custar uma chamada ao
+  modelo em três tipos de pendência que antes custavam zero;
+- a regra 6 do `CLAUDE.md` continua intacta: `sim`, `não`, `desfazer` e número
+  seguem resolvidos antes de qualquer chamada. O que sumiu foi a *segunda*
+  chamada — agora é uma só por mensagem, com ou sem pendência aberta.
+
 ## Gatilhos de revisão
 
 - **Etapa 3**: `fecharCompra` acrescenta um tipo de pendência ("fechar compra
-  sem informar valor") — deve caber no mecanismo existente sem tipo especial. Se
-  não couber, o desenho de `PendingActionType` é que precisa mudar, não o caso.
+  sem informar valor"). Respondido em 2026-09-16, ver acima: não cabia, o
+  desenho de `PendingActionType` mudou, e agora cabe.
 - **Etapa 4**: a central de pendências vai ler `question_asked` e `options_json`
   para renderizar UI. A própria ADR-0018 registra que pode não ser suficiente —
   e agora há um dado a mais a considerar: o tipo, que hoje está dentro de
@@ -265,7 +325,10 @@ provavelmente uma correção de registro na ADR-0019.
   hierarquia, a ADR-0026 já prevê trocar a segunda chamada ao modelo por uma
   heurística de marcador textual ("dentro de"). O ponto de troca é um só,
   `otherAnswer` no orquestrador.
-- Se "repete a pergunta" se mostrar irritante na prática — a pessoa manda uma
-  despesa nova com pergunta pendente e recebe a pergunta de volta —, é aqui que
-  se decide deixar a mensagem nova passar por cima da pendência. Nenhum
-  documento decide isso hoje, e não foi inventado.
+- ~~Se "repete a pergunta" se mostrar irritante na prática, é aqui que se decide
+  deixar a mensagem nova passar por cima da pendência.~~ Decidido em 2026-09-16
+  pela ADR-0029, antes de a prática cobrar: o que forçou não foi a irritação e
+  sim o lançamento errado silencioso descrito acima.
+- **Etapa 5**: medir quantas pendências são superadas por mensagem nova. Se for
+  raro, o desempate por confiança alta está apertado demais e a pessoa segue
+  presa à pergunta sem que ninguém veja.

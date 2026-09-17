@@ -42,6 +42,16 @@ public class Category extends PanacheEntityBase {
     @Column(nullable = false)
     public String name;
 
+    /**
+     * {@link #name} minusculo e sem acento (ADR-0030). E por esta coluna que o
+     * indice unico de irmaos passa, e e ela que <code>CategoryService</code>
+     * consulta: sem ela, "alimentacao" criava uma raiz homonima ao lado de
+     * "Alimentação". Gravada sempre por
+     * {@link com.novoapp.common.text.Normalization}, nunca a mao.
+     */
+    @Column(name = "name_normalized", nullable = false)
+    public String nameNormalized;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "kind", nullable = false)
     public EntryKind kind;

@@ -1,12 +1,12 @@
 package com.novoapp.finance.repository;
 
+import com.novoapp.common.text.Normalization;
 import com.novoapp.finance.entity.Category;
 import com.novoapp.finance.entity.EntryKind;
 import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
 import jakarta.enterprise.context.ApplicationScoped;
 
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -26,14 +26,19 @@ public class CategoryRepository implements PanacheRepositoryBase<Category, UUID>
     }
 
     /**
-     * Busca por nome sem diferenciar maiuscula/minuscula, em toda a arvore --
-     * raiz e subcategoria. Procurar so entre as raizes faria "restaurante dentro
-     * de restaurante" criar uma raiz nova homonima em vez de ser recusado, que e
-     * exatamente o que a ADR-0026 manda recusar (ADR-0016, limite de um nivel).
+     * Busca pela forma normalizada -- minuscula e sem acento (ADR-0030) --, em
+     * toda a arvore: raiz e subcategoria.
+     *
+     * <p>Procurar so entre as raizes faria "restaurante dentro de restaurante"
+     * criar uma raiz nova homonima em vez de ser recusado, que e exatamente o que
+     * a ADR-0026 manda recusar (ADR-0016, limite de um nivel). E comparar so por
+     * <code>lower(name)</code>, como ate 2026-09-16, fazia "dentro de
+     * alimentacao" criar uma raiz "Alimentacao" ao lado da "Alimentação" que ja
+     * existia -- o mesmo furo, por outra porta.
      */
     public Optional<Category> findExpenseByName(String name) {
-        return find("kind = ?1 and archivedAt is null and lower(name) = ?2",
-                EntryKind.EXPENSE, name.trim().toLowerCase(Locale.ROOT))
+        return find("kind = ?1 and archivedAt is null and nameNormalized = ?2",
+                EntryKind.EXPENSE, Normalization.of(name))
                 .firstResultOptional();
     }
 }

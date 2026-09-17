@@ -40,6 +40,14 @@ public enum MessageKey {
     REVERSAL_RECEIPT_FOOTER("reversal.receipt.footer"),
     REVERSAL_NOTHING("reversal.nothing"),
 
+    // ------------------------------------------------- confirmacao (ADR-0029)
+    CONFIRM_FOOTER("confirm.footer"),
+    CONFIRM_EXPENSE("confirm.expense"),
+    CONFIRM_LIST_ITEMS_ONE("confirm.list.items.one"),
+    CONFIRM_LIST_ITEMS_MANY("confirm.list.items.many"),
+    CONFIRM_MARK_PURCHASED("confirm.mark.purchased"),
+    CONFIRM_INVITE("confirm.invite"),
+
     // -------------------------------------------------------------- pendencia
     PENDING_CANCELLED("pending.cancelled"),
     PENDING_REJECTED("pending.rejected"),

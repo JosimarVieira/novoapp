@@ -1,5 +1,7 @@
 package com.novoapp.support;
 
+import com.novoapp.common.text.Normalization;
+
 import io.agroal.api.AgroalDataSource;
 import io.quarkus.agroal.DataSource;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -60,15 +62,18 @@ public class Fixtures {
      */
     public UUID insertExpenseCategory(UUID householdId, String name) {
         return insertReturningId(
-                "INSERT INTO category (household_id, name, kind) VALUES (?, ?, 'EXPENSE') RETURNING id",
-                householdId, name);
+                """
+                INSERT INTO category (household_id, name, name_normalized, kind)
+                VALUES (?, ?, ?, 'EXPENSE') RETURNING id""",
+                householdId, name, Normalization.of(name));
     }
 
     /** Subcategoria: so um nivel (ADR-0016). */
     public UUID insertExpenseSubcategory(UUID householdId, UUID parentCategoryId, String name) {
         return insertReturningId("""
-                INSERT INTO category (household_id, parent_category_id, name, kind)
-                VALUES (?, ?, ?, 'EXPENSE') RETURNING id""", householdId, parentCategoryId, name);
+                INSERT INTO category (household_id, parent_category_id, name, name_normalized, kind)
+                VALUES (?, ?, ?, ?, 'EXPENSE') RETURNING id""",
+                householdId, parentCategoryId, name, Normalization.of(name));
     }
 
     /**
@@ -97,10 +102,10 @@ public class Fixtures {
     public UUID insertListItem(UUID householdId, UUID shoppingListId, String name,
                                String status, UUID requestedByMemberId) {
         return insertReturningId("""
-                INSERT INTO list_item (household_id, shopping_list_id, name, status,
+                INSERT INTO list_item (household_id, shopping_list_id, name, name_normalized, status,
                                        requested_by_member_id, purchased_by_member_id, purchased_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id""",
-                householdId, shoppingListId, name, status, requestedByMemberId,
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id""",
+                householdId, shoppingListId, name, Normalization.of(name), status, requestedByMemberId,
                 "PURCHASED".equals(status) ? requestedByMemberId : null,
                 "PURCHASED".equals(status) ? java.sql.Timestamp.from(Instant.now()) : null);
     }

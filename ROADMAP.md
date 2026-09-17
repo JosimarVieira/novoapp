@@ -154,6 +154,39 @@ convite por SQL, os dois passos manuais que a Etapa 1 documentava em
 [`server/README.md`](server/README.md), deixaram de existir: são exatamente os
 dois fluxos que esta etapa entregou.
 
+## Saneamento antes da Etapa 3 (executado em 2026-09-16)
+
+Não é etapa e não entrega funcionalidade: é o que precisava estar de pé para a
+Etapa 3 não nascer torta. Saiu de uma auditoria de código em 2026-09-14, com o
+plano e a validação de cada furo em
+[`PLANO-SANEAMENTO-PRE-ETAPA-3.md`](PLANO-SANEAMENTO-PRE-ETAPA-3.md).
+
+Quatro ADRs novas, todas aceitas no mesmo dia:
+
+- [ADR-0029](docs/01-adr/0029-intencao-adiada-e-precedencia-de-mensagem-nova.md) —
+  a pendência guarda a intenção adiada, confiança média deixa de executar em
+  toda intenção que escreve, e mensagem nova pode superar a pergunta aberta.
+  Fecha três furos de uma vez, incluindo o mais grave: mensagem sobre outro
+  assunto virando categoria errada com o valor de outra despesa dentro.
+- [ADR-0030](docs/01-adr/0030-correspondencia-de-nome-por-forma-normalizada.md) —
+  nome de categoria e de item casa sem acento, por coluna persistida e índice
+  único. Plural fica de fora, declaradamente.
+- [ADR-0031](docs/01-adr/0031-atomicidade-do-fechamento-de-compra.md) e
+  [ADR-0032](docs/01-adr/0032-desfazer-alcanca-o-fechamento-inteiro.md) — o
+  desenho do elo, escrito antes do código da Etapa 3: onde fica a transação, e
+  o que `desfazer` reverte. Zero código nestas duas.
+
+Também saíram: a guarda que recusa subir em produção sem o segredo do webhook,
+o recibo de erro que deixou de afirmar "não gravei nada" (o orquestrador não é
+transacional, então às vezes gravou), e a promessa do comando `usar <família>`
+retirada da mensagem de convite — o comando é decisão da
+[ADR-0007](docs/01-adr/0007-pessoa-em-multiplos-households.md) e **continua não
+implementado**; o que mudou é que o bot parou de ensiná-lo.
+
+Cenários novos levam a tag `@saneamento`, com `SaneamentoAcceptanceTest`
+próprio, pelo mesmo motivo que a Etapa 2a teve o seu: escopo novo não pode
+pintar de vermelho o portão de uma etapa fechada.
+
 ## Etapa 3 — O elo (~1 semana)
 
 `fecharCompra` atômico, `list_checkout`, `desfazer` reversível dos dois lados.

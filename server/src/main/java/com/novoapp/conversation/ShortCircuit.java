@@ -1,8 +1,8 @@
 package com.novoapp.conversation;
 
+import com.novoapp.common.text.Normalization;
+
 import java.math.BigDecimal;
-import java.text.Normalizer;
-import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -98,10 +98,14 @@ public final class ShortCircuit {
         return new BigDecimal(whole + "." + fraction).movePointRight(2).longValueExact();
     }
 
-    /** Minuscula, sem acento, sem pontuacao final: "Sim!" e "sim" sao a mesma resposta. */
+    /**
+     * Minuscula, sem acento, sem pontuacao final: "Sim!" e "sim" sao a mesma
+     * resposta. A parte "minuscula e sem acento" e a mesma de
+     * {@link Normalization} desde a ADR-0030 -- so a pontuacao final e
+     * especifica daqui, porque so aqui o texto e uma resposta curta e nao um
+     * nome.
+     */
     private static String normalize(String text) {
-        String stripped = Normalizer.normalize(text.trim().toLowerCase(Locale.ROOT), Normalizer.Form.NFD)
-                .replaceAll("\\p{InCombiningDiacriticalMarks}+", "");
-        return stripped.replaceAll("[.!?;]+$", "").trim();
+        return Normalization.of(text).replaceAll("[.!?;]+$", "").trim();
     }
 }

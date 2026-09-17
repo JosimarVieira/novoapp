@@ -1,5 +1,6 @@
 package com.novoapp.nlu;
 
+import com.novoapp.common.text.Normalization;
 import com.novoapp.finance.CategoryView;
 import com.novoapp.nlu.spi.InterpretationRequest;
 import com.novoapp.nlu.spi.MessageInterpreter;
@@ -15,7 +16,6 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
 import java.math.BigDecimal;
-import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -57,30 +57,34 @@ public class NluService {
     }
 
     /**
-     * Segunda chamada ao modelo, so pra ler a correcao livre de uma pergunta de
-     * criacao de categoria (ADR-0026).
+     * A chamada de uma mensagem que chegou com pergunta em aberto no fio
+     * (ADR-0029).
      *
-     * <p>E a excecao explicita a regra 6 do CLAUDE.md, e ela vale so aqui: e a
-     * unica pendencia cujo terceiro caminho de resolucao nao cabe em
-     * curto-circuito deterministico, porque "restaurante dentro de alimentacao"
-     * nao e <code>sim</code>, nao e <code>nao</code> e nao e um numero.
+     * <p>Antes desta ADR, aqui so <code>confirmarCategoriaSugerida</code> era
+     * declarada, e so para pendencia de categoria: o modelo nao tinha como dizer
+     * "isto nao responde a pergunta", e mensagem sobre outro assunto podia virar
+     * categoria errada levando junto o valor guardado na pendencia. Agora o
+     * cardapio e o do dia a dia, mais a correcao quando ha categoria oferecida a
+     * corrigir -- e quem decide o que fazer com o resultado e
+     * <code>conversation</code>, como sempre.
+     *
+     * <p>Continua sendo <b>uma</b> chamada por mensagem, nunca duas: o
+     * curto-circuito deterministico da regra 6 do CLAUDE.md roda antes e nao
+     * chega aqui.
      */
-    public Intent interpretCategoryCorrection(UUID householdId, String questionAsked, String text) {
+    public Intent interpretAnsweringPending(UUID householdId, String questionAsked, String text,
+                                            boolean categoryCorrectionOffered) {
         if (text == null || text.isBlank()) {
             return Intent.unknown();
         }
 
         Map<String, CategoryView> categoriesByLabel = contextBuilder.expenseCategoriesByLabel(householdId);
-        InterpretationRequest request = InterpretationRequest.categoryCorrection(text, questionAsked,
-                List.copyOf(categoriesByLabel.keySet()));
+        InterpretationRequest request = InterpretationRequest.answeringPending(text, questionAsked,
+                categoryCorrectionOffered, List.copyOf(categoriesByLabel.keySet()),
+                contextBuilder.pendingItemNames(householdId));
 
         return interpreter.interpret(request)
-                .filter(call -> ConfirmSuggestedCategoryTool.NAME.equals(call.toolName()))
-                .<Intent>map(call -> new Intent.ConfirmSuggestedCategory(
-                        call.text(ConfirmSuggestedCategoryTool.NAME_PARAMETER),
-                        call.text(ConfirmSuggestedCategoryTool.PARENT_PARAMETER),
-                        confidenceOf(call, ConfirmSuggestedCategoryTool.CONFIDENCE_PARAMETER)))
-                .filter(intent -> ((Intent.ConfirmSuggestedCategory) intent).name() != null)
+                .map(call -> toIntent(call, categoriesByLabel))
                 .orElseGet(Intent::unknown);
     }
 
@@ -92,8 +96,25 @@ public class NluService {
             case QueryListTool.NAME -> new Intent.QueryList(
                     confidenceOf(call, QueryListTool.CONFIDENCE_PARAMETER));
             case InviteMemberTool.NAME -> inviteMember(call);
+            case ConfirmSuggestedCategoryTool.NAME -> confirmSuggestedCategory(call);
             default -> Intent.unknown();
         };
+    }
+
+    /**
+     * So aparece respondendo a uma pendencia de categoria -- a tool nem e
+     * declarada fora dela. Sem nome nao ha o que criar, e vira confianca baixa
+     * em vez de categoria adivinhada, pelo mesmo criterio de
+     * {@link #registerExpense}.
+     */
+    private Intent confirmSuggestedCategory(ToolCall call) {
+        String name = call.text(ConfirmSuggestedCategoryTool.NAME_PARAMETER);
+        if (name == null) {
+            return Intent.unknown();
+        }
+        return new Intent.ConfirmSuggestedCategory(name,
+                call.text(ConfirmSuggestedCategoryTool.PARENT_PARAMETER),
+                confidenceOf(call, ConfirmSuggestedCategoryTool.CONFIDENCE_PARAMETER));
     }
 
     private Intent registerExpense(ToolCall call, Map<String, CategoryView> categoriesByLabel) {
@@ -214,10 +235,9 @@ public class NluService {
         return right != null && normalize(left).equals(normalize(right));
     }
 
-    /** Sem acento e em minuscula: "farmacia" e "Farmácia" sao a mesma categoria. */
+    /** Sem acento e em minuscula: "farmacia" e "Farmácia" sao a mesma categoria (ADR-0030). */
     private String normalize(String text) {
-        return Normalizer.normalize(text.trim().toLowerCase(Locale.ROOT), Normalizer.Form.NFD)
-                .replaceAll("\\p{InCombiningDiacriticalMarks}+", "");
+        return Normalization.of(text);
     }
 
     private BigDecimal decimal(Object value) {

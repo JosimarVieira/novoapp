@@ -2,12 +2,15 @@
 tipo: sdd
 modulo: shopping
 status: escrito
-atualizado_em: 2026-09-08
+atualizado_em: 2026-09-16
 adrs:
   - ADR-0003
   - ADR-0004
   - ADR-0018
   - ADR-0027
+  - ADR-0030
+  - ADR-0031
+  - ADR-0032
 ---
 
 # SDD — Módulo `shopping`
@@ -104,7 +107,9 @@ consegue garantir não fica dependendo de quem escreve a query (ADR-0003 aplicad
 ao que ela não cobre — ela fala de isolamento, mas o raciocínio é o mesmo).
 
 **Item repetido não duplica; é reconhecido.** Índice único parcial em
-`list_item (shopping_list_id, lower(name)) WHERE status = 'PENDING'`. O serviço
+`list_item (shopping_list_id, name_normalized) WHERE status = 'PENDING'`
+([ADR-0030](../01-adr/0030-correspondencia-de-nome-por-forma-normalizada.md);
+era `lower(name)` até 2026-09-16). O serviço
 checa antes e devolve "já estava lá, pedido por fulano" (cenário "Item já
 pendente na lista"); o índice é rede de segurança contra corrida, não o caminho
 normal. Só vale enquanto `PENDING`: comprado o arroz de hoje, ele pode faltar de
@@ -113,10 +118,15 @@ novo amanhã — por isso o índice é parcial e não abrange `PURCHASED`.
 **A grafia do item vem do modelo, não do texto cru.** "acabou o arroz" grava o
 item `Arroz`, não `arroz` nem `o arroz`. Quem normaliza é `nlu` na extração,
 como já faz com categoria — `shopping` grava o que recebe. Comparação de item
-existente é sem diferenciar maiúscula/minúscula (o `lower(name)` do índice),
-mesma escolha que a ADR-0026 fez para nome de categoria, e com o mesmo risco
-aberto: variação por acento ou plural cria item novo em vez de reconhecer o que
-já está lá.
+existente é pela forma normalizada — minúscula e sem acento
+([ADR-0030](../01-adr/0030-correspondencia-de-nome-por-forma-normalizada.md)),
+gravada em `name_normalized` e usada tanto pela consulta quanto pelo índice.
+
+**Corrigido em 2026-09-16**: os dois eram `lower(name)`, e por isso "acabou
+cafe" com "Café" já pendente inseria um segundo item — a consulta não achava o
+primeiro e o índice não barrava o segundo. Sem pergunta e sem aviso, que é o
+pior desfecho possível dos dois. **Plural continua fora**: "ovo" e "ovos" seguem
+sendo itens diferentes, por decisão explícita da ADR-0030.
 
 **`quantity` é fracionário (`numeric`), não inteiro.** "meio quilo de queijo" é
 tão comum quanto "2 kg de arroz". Não conflita com a regra de `amount_cents`
@@ -171,6 +181,32 @@ chat, nunca silêncio (regra do `sdd-visao-geral.md`).
   `estrategia-de-testes.md` para toda tabela de dado de usuário que a etapa
   toca.
 
+## O que a Etapa 3 já tem decidido (2026-09-16)
+
+O elo ainda não está implementado, mas duas decisões que o código dele pressupõe
+já estão fechadas — escritas antes da etapa começar, para que o código não as
+invente:
+
+- **`fecharCompra` é atômico e mora aqui**
+  ([ADR-0031](../01-adr/0031-atomicidade-do-fechamento-de-compra.md)): um método
+  `@Transactional @HouseholdScoped` deste módulo fecha os itens, grava o
+  `list_checkout` e chama `finance` dentro da mesma transação. `conversation`
+  continua sem transação própria. Usa a única aresta que a regra de dependência
+  já permitia — `shopping` → `finance` —, agora em tempo de execução e não só no
+  papel.
+- **`desfazer` reverte o fechamento inteiro**
+  ([ADR-0032](../01-adr/0032-desfazer-alcanca-o-fechamento-inteiro.md)): os itens
+  daquele fechamento voltam a `PENDING` junto com o estorno do lançamento, na
+  mesma transação. Item que colidiria com um pendente de mesmo nome normalizado
+  ([ADR-0030](../01-adr/0030-correspondencia-de-nome-por-forma-normalizada.md))
+  permanece `PURCHASED` — o efeito pretendido já está alcançado por quem avisou
+  de novo.
+
+Fica declarado o limite que as duas deixam: item marcado como comprado **fora**
+de um fechamento não é desfazível pelo chat, porque não cria lançamento e
+portanto não é alcançável pelo alvo da
+[ADR-0025](../01-adr/0025-desfazer-precedencia-e-escopo.md).
+
 ## Gatilhos de revisão
 
 - **Etapa 3**: `fecharCompra`, `list_checkout` e a atomicidade lista+lançamento
@@ -181,7 +217,11 @@ chat, nunca silêncio (regra do `sdd-visao-geral.md`).
   "a lista ativa" deixa de ser singular e o índice único parcial cai junto. Nada
   nesta versão depende de a lista ser única além desse índice e da resolução
   implícita em `addItems`/`pendingItems`.
-- Se a comparação por `lower(name)` mostrar, no uso real, item duplicado por
-  acento ou plural ("cafe"/"café", "ovo"/"ovos"), a correspondência aproximada
-  entra aqui e na criação de categoria ao mesmo tempo — é o mesmo problema, e a
-  ADR-0024 já o registra como risco aberto do lado de finanças.
+- ~~Se a comparação por `lower(name)` mostrar item duplicado por acento ou
+  plural, a correspondência aproximada entra aqui e na criação de categoria ao
+  mesmo tempo.~~ Metade resolvida em 2026-09-16 pela
+  [ADR-0030](../01-adr/0030-correspondencia-de-nome-por-forma-normalizada.md), e
+  nos dois lugares ao mesmo tempo como este gatilho pedia: acento deixou de
+  duplicar. **Plural segue aberto** — se o uso real mostrar "ovo"/"ovos" como
+  causa frequente, é a aproximação difusa que a ADR-0030 recusou por prazo que
+  volta à mesa, com dado da Etapa 5 para escolher método e limiar.

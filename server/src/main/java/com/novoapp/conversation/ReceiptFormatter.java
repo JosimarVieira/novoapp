@@ -110,6 +110,45 @@ public class ReceiptFormatter {
                 : Messages.get(locale, MessageKey.AMOUNT_ASK, categoryLabel);
     }
 
+    // ------------------------------------------------------------------
+    // Confirmacao de confianca media (ADR-0029)
+    // ------------------------------------------------------------------
+
+    /**
+     * ADR-0029: confianca media nunca executa. A intencao volta ecoada e espera
+     * um <code>sim</code>.
+     *
+     * <p>O eco e o que faz a pergunta valer a pena: quem le reconhece o erro sem
+     * ter de lembrar o que escreveu, e responder custa uma palavra. Uma pergunta
+     * so, como toda pergunta deste modulo.
+     */
+    public String confirmExpense(Locale locale, String categoryLabel, Long amountCents, String description) {
+        StringBuilder question = new StringBuilder(Messages.get(locale, MessageKey.CONFIRM_EXPENSE,
+                categoryLabel, formatAmount(amountCents)));
+        if (description != null) {
+            question.append(Messages.get(locale, MessageKey.EXPENSE_RECEIPT_DESCRIPTION, description));
+        }
+        return question.append(Messages.get(locale, MessageKey.CONFIRM_FOOTER)).toString();
+    }
+
+    public String confirmListItems(Locale locale, List<String> names) {
+        String header = names.size() == 1
+                ? Messages.get(locale, MessageKey.CONFIRM_LIST_ITEMS_ONE, names.get(0))
+                : Messages.get(locale, MessageKey.CONFIRM_LIST_ITEMS_MANY, bulleted(locale, names));
+        return header + Messages.get(locale, MessageKey.CONFIRM_FOOTER);
+    }
+
+    public String confirmMarkPurchased(Locale locale, String itemName) {
+        return Messages.get(locale, MessageKey.CONFIRM_MARK_PURCHASED, itemName)
+                + Messages.get(locale, MessageKey.CONFIRM_FOOTER);
+    }
+
+    /** O convite e o mais caro de errar: um numero errado ganha entrada na familia. */
+    public String confirmInvite(Locale locale, String memberName, String phoneNumber) {
+        return Messages.get(locale, MessageKey.CONFIRM_INVITE, memberName, phoneNumber)
+                + Messages.get(locale, MessageKey.CONFIRM_FOOTER);
+    }
+
     /**
      * ADR-0026: a correcao pediria dois niveis de hierarquia, o que a ADR-0016
      * proibe. Volta a perguntar, com o motivo -- nao e erro generico, e uma
