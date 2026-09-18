@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Function calling contra o provedor de LLM (ADR-0004), Mistral na fase de
@@ -43,7 +44,10 @@ public class MistralMessageInterpreter implements MessageInterpreter {
             Mensagens reais sao curtas, sem pontuacao e em qualquer ordem: "mercado 50", "50 mercado",
             "gastei 50 no mercado", "acabou o arroz", "o que esta faltando?".
             Escolha exatamente uma ferramenta, a que melhor descreve o que a pessoa quis.
-            Converta valor de dinheiro para centavos: 50 reais viram 5000.
+            Valor de dinheiro vai em reais, exatamente como a pessoa escreveu: em "mercado 50" o
+            valor e 50. Nunca multiplique e nunca converta para centavos -- quem faz essa conta e o
+            sistema.
+            Responda SEMPRE chamando uma ferramenta. Nunca escreva a chamada como texto na resposta.
             Nunca invente valor, categoria, item nem hierarquia de categoria que a pessoa nao escreveu.
             Preencha sempre o parametro confianca, com honestidade: ele decide se o sistema executa
             direto ou pergunta antes.""";
@@ -62,7 +66,10 @@ public class MistralMessageInterpreter implements MessageInterpreter {
             So use confianca alta na leitura 2 se estiver claro que a pessoa mudou de assunto. Se a
             mensagem puder ser uma resposta a pergunta, ainda que parcial ou mal escrita, ela e a
             leitura 1 -- responder com o nome de uma das opcoes, em vez do numero dela, e responder.
-            Converta valor de dinheiro para centavos: 50 reais viram 5000.
+            Valor de dinheiro vai em reais, exatamente como a pessoa escreveu: em "mercado 50" o
+            valor e 50. Nunca multiplique e nunca converta para centavos -- quem faz essa conta e o
+            sistema.
+            Responda SEMPRE chamando uma ferramenta. Nunca escreva a chamada como texto na resposta.
             Nunca invente valor, categoria, item nem hierarquia de categoria que a pessoa nao escreveu.
             Preencha sempre o parametro confianca, com honestidade.""";
 
@@ -89,7 +96,7 @@ public class MistralMessageInterpreter implements MessageInterpreter {
 
         List<ToolExecutionRequest> toolCalls = response.aiMessage().toolExecutionRequests();
         if (toolCalls == null || toolCalls.isEmpty()) {
-            return Optional.empty();
+            return recoverFromText(response.aiMessage().text(), tools);
         }
 
         // Uma tool so, mesmo que o modelo devolva varias: a mensagem e uma acao
@@ -148,6 +155,69 @@ public class MistralMessageInterpreter implements MessageInterpreter {
                     .append(String.join(", ", request.pendingListItems()));
         }
         return prompt.toString();
+    }
+
+    /**
+     * Recupera a chamada quando o modelo a escreve como <b>texto</b> em vez de
+     * devolve-la como tool call (observado em producao em 2026-09-18).
+     *
+     * <p>O ministral-8b faz isso com alguma frequencia: <code>casa 20</code>
+     * voltou com <code>finish_reason: stop</code>, <code>tool_calls: null</code>
+     * e o conteudo <code>{"categoria_sugerida": "Casa", "valor": 20,
+     * "confianca": 0.3}</code> -- ou seja, a interpretacao certa, no formato
+     * certo, no campo errado. Descartar isso e mandar "nao entendi" enquanto a
+     * resposta esta na mao.
+     *
+     * <p>Mora no adaptador do provedor, e nao em <code>NluService</code>, porque
+     * e defeito de provedor: quem trocar de modelo na Etapa 5 leva o problema
+     * (ou nao) junto com o adaptador, e nao com a interpretacao.
+     *
+     * <p>A tool e deduzida pelos nomes dos parametros, e so quando a deducao e
+     * <b>unica</b>: <code>confianca</code> existe em todas, entao um conteudo so
+     * com ela nao decide nada e o metodo desiste. Desistir devolve
+     * {@link Optional#empty()}, que ja significa "nenhuma tool escolhida" na
+     * ADR-0004 -- o comportamento de antes, sem piora.
+     */
+    static Optional<ToolCall> recoverFromText(String text, List<ToolSpecification> tools) {
+        if (text == null || text.isBlank()) {
+            return Optional.empty();
+        }
+        int open = text.indexOf('{');
+        int close = text.lastIndexOf('}');
+        if (open < 0 || close <= open) {
+            return Optional.empty();
+        }
+
+        Map<String, Object> arguments;
+        try {
+            arguments = new ObjectMapper().readValue(text.substring(open, close + 1),
+                    new TypeReference<Map<String, Object>>() { });
+        } catch (Exception e) {
+            LOG.debugf("Conteudo sem tool call e sem JSON aproveitavel: %s", text);
+            return Optional.empty();
+        }
+        if (arguments.isEmpty()) {
+            return Optional.empty();
+        }
+
+        List<ToolSpecification> candidates = tools.stream()
+                .filter(tool -> parameterNamesOf(tool).containsAll(arguments.keySet()))
+                .toList();
+        if (candidates.size() != 1) {
+            LOG.debugf("Chamada escrita como texto nao identifica uma tool unica: %s", arguments.keySet());
+            return Optional.empty();
+        }
+
+        LOG.warnf("Modelo escreveu a chamada de %s como texto; recuperada do conteudo",
+                candidates.get(0).name());
+        return Optional.of(new ToolCall(candidates.get(0).name(), arguments));
+    }
+
+    private static Set<String> parameterNamesOf(ToolSpecification tool) {
+        if (tool.parameters() == null || tool.parameters().properties() == null) {
+            return Set.of();
+        }
+        return tool.parameters().properties().keySet();
     }
 
     private Optional<ToolCall> parse(ToolExecutionRequest call) {

@@ -71,6 +71,25 @@ textual — nunca de `double`, porque `new BigDecimal(49.90d)` vale
 Vale como princípio além deste parâmetro: **o que é determinístico não se
 delega ao modelo.** O modelo lê intenção; conta, o código faz.
 
+**A chamada escrita como texto é recuperada no adaptador** (2026-09-18). O
+ministral-8b às vezes devolve `finish_reason: stop`, `tool_calls: null`, e a
+chamada no corpo da mensagem: `casa 20` voltou com
+`{"categoria_sugerida": "Casa", "valor": 20, "confianca": 0.3}` — interpretação
+certa, formato certo, campo errado. Descartar isso e responder "não entendi" com
+a resposta na mão é o pior desfecho disponível.
+
+`MistralMessageInterpreter.recoverFromText` extrai o JSON do conteúdo e deduz a
+tool pelos nomes dos parâmetros, **só quando a dedução é única** — `confianca`
+existe em todas, então conteúdo só com ela não decide nada e o método desiste.
+Desistir devolve "nenhuma tool escolhida", que já é o caminho de confiança baixa
+da ADR-0004: nunca uma tool adivinhada.
+
+Mora no adaptador do provedor, e não aqui: é defeito de provedor, e quem trocar
+de modelo na Etapa 5 leva o problema — ou não — junto com o adaptador. Não é
+coberto por cenário de aceitação porque o stub substitui exatamente a classe onde
+o defeito mora; a cobertura é `MistralToolCallRecoveryTest`, com a resposta
+literal colhida em produção.
+
 **`convidarMembro` não está na lista de tools que a ADR-0004 enumera.** Aquela
 lista descreve o mecanismo com os fluxos de domínio conhecidos em 2026-08-31, e
 a [ADR-0020](../01-adr/0020-convite-de-membro.md) é posterior: ela exige que o
