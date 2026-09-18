@@ -56,6 +56,21 @@ deixou para a implementação — com os dois preenchidos, a que existe vence; c
 o errado preenchido, o nome não se perde. Nada é criado por engano: criar
 categoria exige confirmação de qualquer jeito.
 
+**A conversão para centavos é do código, não do modelo** (mudado em 2026-09-18,
+com log de produção). O parâmetro era `valor_cents` e pedia a multiplicação ao
+Mistral; um modelo de 8B erra aritmética, e errou: `Mercado 500 fechar lista`
+voltou com 500 centavos e `comprei toda lista 500 mercado` com 5000, quando as
+duas eram R$ 500,00. Os recibos disseram R$ 5,00 e R$ 50,00 — **erro silencioso,
+em dinheiro**, que é a pior classe de erro deste produto.
+
+Agora o parâmetro é `valor`, em reais, "exatamente como a pessoa escreveu", e
+`NluService` multiplica por cem com `BigDecimal` construído a partir da forma
+textual — nunca de `double`, porque `new BigDecimal(49.90d)` vale
+49.8999999999999985.
+
+Vale como princípio além deste parâmetro: **o que é determinístico não se
+delega ao modelo.** O modelo lê intenção; conta, o código faz.
+
 **`convidarMembro` não está na lista de tools que a ADR-0004 enumera.** Aquela
 lista descreve o mecanismo com os fluxos de domínio conhecidos em 2026-08-31, e
 a [ADR-0020](../01-adr/0020-convite-de-membro.md) é posterior: ela exige que o

@@ -107,7 +107,7 @@ public class StubMessageInterpreter implements MessageInterpreter {
     private static final Map<String, Map<String, Object>> FIXED_EXPENSES = Map.of(
             "restaurante eu e esposa 90", Map.of(
                     RegisterExpenseTool.SUGGESTED_CATEGORY_PARAMETER, "Restaurante",
-                    RegisterExpenseTool.AMOUNT_PARAMETER, 9000L,
+                    RegisterExpenseTool.AMOUNT_PARAMETER, new BigDecimal("90"),
                     RegisterExpenseTool.DESCRIPTION_PARAMETER, "eu e esposa",
                     RegisterExpenseTool.CONFIDENCE_PARAMETER, CERTAIN),
             // O modelo escrevendo no campo errado, observado em producao em
@@ -116,7 +116,7 @@ public class StubMessageInterpreter implements MessageInterpreter {
             // padrao de linguagem --, entao entra como Intent fixa.
             "madeireira 300", Map.of(
                     RegisterExpenseTool.CATEGORY_PARAMETER, "Madeireira",
-                    RegisterExpenseTool.AMOUNT_PARAMETER, 30000L,
+                    RegisterExpenseTool.AMOUNT_PARAMETER, new BigDecimal("300"),
                     RegisterExpenseTool.CONFIDENCE_PARAMETER, CERTAIN));
 
     /**
@@ -219,15 +219,17 @@ public class StubMessageInterpreter implements MessageInterpreter {
                 .sorted(Comparator.comparingInt(String::length))
                 .toList();
 
+        // Em reais, como o modelo passou a devolver desde 2026-09-18: quem
+        // multiplica por cem e NluService, nao quem interpreta.
         Matcher amount = AMOUNT.matcher(normalized);
-        Long amountCents = amount.find()
-                ? new BigDecimal(amount.group(1).replace(',', '.')).movePointRight(2).longValueExact()
+        BigDecimal amountInReais = amount.find()
+                ? new BigDecimal(amount.group(1).replace(',', '.'))
                 : null;
-        String amountText = amountCents == null ? null : amount.group(1);
+        String amountText = amountInReais == null ? null : amount.group(1);
 
         Map<String, Object> arguments = new LinkedHashMap<>();
-        if (amountCents != null) {
-            arguments.put(RegisterExpenseTool.AMOUNT_PARAMETER, amountCents);
+        if (amountInReais != null) {
+            arguments.put(RegisterExpenseTool.AMOUNT_PARAMETER, amountInReais);
         }
 
         if (!candidates.isEmpty()) {
@@ -242,7 +244,7 @@ public class StubMessageInterpreter implements MessageInterpreter {
             return Optional.of(new ToolCall(RegisterExpenseTool.NAME, arguments));
         }
 
-        if (amountCents == null) {
+        if (amountInReais == null) {
             // Nem categoria conhecida nem valor: nao da pra chamar tool nenhuma
             // sem inventar as duas coisas.
             return Optional.empty();
