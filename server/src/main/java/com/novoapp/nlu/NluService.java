@@ -147,6 +147,22 @@ public class NluService {
                     amountCents, description, confidence);
         }
 
+        // O modelo escreveu no campo errado: pos um nome que nao esta no enum em
+        // `categoria`, e deixou `categoria_sugerida` vazio. E a contrapartida da
+        // regra defensiva logo acima -- la, com os dois preenchidos, a que existe
+        // vence; aqui, com so o errado preenchido, o nome vale como sugestao.
+        //
+        // Acrescentado em 2026-09-18, com dado de uso real: "Madeireira 300"
+        // caia neste ponto e virava "nao entendi essa", enquanto "Pet shop 80"
+        // -- mensagem da mesma forma -- funcionava, porque naquela o modelo
+        // acertou o campo. Descartar a mensagem inteira por erro de campo e o
+        // pior desfecho disponivel: o nome esta ali, e criar categoria ja exige
+        // confirmacao (ADR-0024), entao nada e criado por engano.
+        if (chosen != null) {
+            return new Intent.RegisterExpense(null, null, List.of(), chosen,
+                    amountCents, description, confidence);
+        }
+
         // Chamou registrarDespesa sem categoria nenhuma: nao da pra registrar e
         // nao da pra oferecer criar o que nao tem nome. Vira confianca baixa,
         // nunca categoria adivinhada.

@@ -42,6 +42,20 @@ mensagem: o que sumiu foi a *segunda*, não a primeira.
 O que `nlu` **não** decide, aqui como em tudo: se a mudança de assunto vale.
 Isso é confiança, e confiança é política de `conversation`.
 
+**Nome de categoria nova no campo errado vale como sugestão** (decidido em
+2026-09-18, com dado de uso real). O parâmetro `categoria` é um enum montado com
+as categorias reais, mas o modelo nem sempre o respeita: `Madeireira 300` chegava
+com `categoria: "Madeireira"` — valor fora do enum — e `categoria_sugerida`
+vazio, e o código descartava a mensagem inteira. `Pet shop 80`, mensagem da
+mesma forma, funcionava, porque ali o modelo acertou o campo.
+
+A ordem agora é: categoria existente que casa vence; senão, `categoria_sugerida`;
+senão, o nome que ficou em `categoria` vale como sugestão. É a contrapartida da
+regra defensiva que a [ADR-0024](../01-adr/0024-categoria-sugerida-por-texto-livre.md)
+deixou para a implementação — com os dois preenchidos, a que existe vence; com só
+o errado preenchido, o nome não se perde. Nada é criado por engano: criar
+categoria exige confirmação de qualquer jeito.
+
 **`convidarMembro` não está na lista de tools que a ADR-0004 enumera.** Aquela
 lista descreve o mecanismo com os fluxos de domínio conhecidos em 2026-08-31, e
 a [ADR-0020](../01-adr/0020-convite-de-membro.md) é posterior: ela exige que o

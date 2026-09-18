@@ -189,6 +189,19 @@ Funcionalidade: Lançamento de despesa por chat
     Então a categoria de despesa "Pet shop" é criada no household "Silva"
     E uma despesa de R$ 80,00 é registrada nessa categoria
 
+  # Também de uso real, em 2026-09-18. "Madeireira 300" virava "não entendi
+  # essa" enquanto "Pet shop 80" — mensagem da mesma forma — funcionava: o
+  # modelo escreveu o nome novo no campo do enum em vez do campo de sugestão, e
+  # o código descartava a mensagem inteira por erro de campo.
+  @saneamento
+  Cenário: Categoria nova que o modelo escreveu no campo errado ainda oferece criação
+    Quando "Ana" envia "madeireira 300"
+    Então nenhuma despesa é registrada ainda
+    E "Ana" recebe uma única pergunta oferecendo criar a categoria "Madeireira"
+    Quando "Ana" responde "sim"
+    Então a categoria de despesa "Madeireira" é criada no household "Silva"
+    E uma despesa de R$ 300,00 é registrada nessa categoria
+
   # ADR-0030. `nlu` já casava acento ao reconhecer categoria existente; a busca
   # da categoria-pai na correção livre é que ficara de fora, e criava uma raiz
   # homônima em silêncio.
