@@ -109,6 +109,14 @@ public class StubMessageInterpreter implements MessageInterpreter {
                     RegisterExpenseTool.SUGGESTED_CATEGORY_PARAMETER, "Restaurante",
                     RegisterExpenseTool.AMOUNT_PARAMETER, 9000L,
                     RegisterExpenseTool.DESCRIPTION_PARAMETER, "eu e esposa",
+                    RegisterExpenseTool.CONFIDENCE_PARAMETER, CERTAIN),
+            // O modelo escrevendo no campo errado, observado em producao em
+            // 2026-09-18: nome fora do enum em `categoria`, e `categoria_sugerida`
+            // vazio. Regra burra nenhuma reproduz isso -- e erro do modelo, nao
+            // padrao de linguagem --, entao entra como Intent fixa.
+            "madeireira 300", Map.of(
+                    RegisterExpenseTool.CATEGORY_PARAMETER, "Madeireira",
+                    RegisterExpenseTool.AMOUNT_PARAMETER, 30000L,
                     RegisterExpenseTool.CONFIDENCE_PARAMETER, CERTAIN));
 
     /**
