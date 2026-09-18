@@ -189,6 +189,16 @@ Funcionalidade: Lançamento de despesa por chat
     Então a categoria de despesa "Pet shop" é criada no household "Silva"
     E uma despesa de R$ 80,00 é registrada nessa categoria
 
+  # A conversão para centavos saiu do modelo e passou para o código em
+  # 2026-09-18: "Mercado 500 fechar lista" foi registrado como R$ 5,00 e
+  # "comprei toda lista 500 mercado" como R$ 50,00 — erro silencioso, em
+  # dinheiro. Este cenário guarda a conversão, não o erro do modelo: o stub
+  # nunca errou a conta, e a prova do furo é o log de produção.
+  @saneamento
+  Cenário: Valor com centavos é registrado exato
+    Quando "Ana" envia "mercado 49,90"
+    Então uma despesa de R$ 49,90 é registrada na categoria "Mercado"
+
   # Também de uso real, em 2026-09-18. "Madeireira 300" virava "não entendi
   # essa" enquanto "Pet shop 80" — mensagem da mesma forma — funcionava: o
   # modelo escreveu o nome novo no campo do enum em vez do campo de sugestão, e

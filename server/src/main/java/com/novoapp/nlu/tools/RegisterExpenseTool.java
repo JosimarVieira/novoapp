@@ -2,7 +2,6 @@ package com.novoapp.nlu.tools;
 
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.model.chat.request.json.JsonEnumSchema;
-import dev.langchain4j.model.chat.request.json.JsonIntegerSchema;
 import dev.langchain4j.model.chat.request.json.JsonNumberSchema;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import dev.langchain4j.model.chat.request.json.JsonStringSchema;
@@ -27,7 +26,15 @@ public final class RegisterExpenseTool {
     public static final String NAME = "registrarDespesa";
     public static final String CATEGORY_PARAMETER = "categoria";
     public static final String SUGGESTED_CATEGORY_PARAMETER = "categoria_sugerida";
-    public static final String AMOUNT_PARAMETER = "valor_cents";
+    /**
+     * <b>Em reais, e nao em centavos</b> (mudado em 2026-09-18, com dado de uso
+     * real). Pedir a conversao ao modelo era pedir aritmetica a um modelo de 8B,
+     * e ele errava: "Mercado 500 fechar lista" virou R$ 5,00 e
+     * "comprei toda lista 500 mercado" virou R$ 50,00 -- erro silencioso, em
+     * dinheiro, que e a pior classe possivel neste produto. Multiplicar por cem
+     * e deterministico e passou a ser feito em {@code NluService}.
+     */
+    public static final String AMOUNT_PARAMETER = "valor";
     public static final String ACCOUNT_PARAMETER = "conta";
     public static final String DESCRIPTION_PARAMETER = "descricao";
     public static final String CONFIDENCE_PARAMETER = "confianca";
@@ -65,9 +72,11 @@ public final class RegisterExpenseTool {
                                         + "nem hierarquia que a pessoa nao escreveu. Nunca preencha junto com "
                                         + CATEGORY_PARAMETER + ".")
                                 .build())
-                        .addProperty(AMOUNT_PARAMETER, JsonIntegerSchema.builder()
-                                .description("Valor da despesa em centavos. 50 reais viram 5000. Deixe vazio "
-                                        + "se a pessoa nao disse o valor -- nunca invente um.")
+                        .addProperty(AMOUNT_PARAMETER, JsonNumberSchema.builder()
+                                .description("Valor da despesa em reais, exatamente como a pessoa escreveu. "
+                                        + "Em \"mercado 50\" o valor e 50; em \"mercado 49,90\" e 49.90. "
+                                        + "Nao multiplique, nao converta para centavos, nao arredonde. "
+                                        + "Deixe vazio se a pessoa nao disse o valor -- nunca invente um.")
                                 .build())
                         .addProperty(ACCOUNT_PARAMETER, JsonStringSchema.builder()
                                 .description("Conta de onde saiu o dinheiro, se a pessoa disser qual.")
@@ -86,7 +95,7 @@ public final class RegisterExpenseTool {
                                         + "poderia servir, ou quando falta o valor; valor baixo quando voce "
                                         + "esta adivinhando.")
                                 .build())
-                        // valor_cents fica fora de required de proposito: "paguei o
+                        // valor fica fora de required de proposito: "paguei o
                         // mercado" precisa ser expressavel como despesa sem valor,
                         // senao o modelo nao chama tool nenhuma e o bot perde a
                         // categoria que ele ja tinha reconhecido -- e nao consegue

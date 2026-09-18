@@ -119,7 +119,7 @@ public class NluService {
 
     private Intent registerExpense(ToolCall call, Map<String, CategoryView> categoriesByLabel) {
         double confidence = confidenceOf(call, RegisterExpenseTool.CONFIDENCE_PARAMETER);
-        Long amountCents = call.integer(RegisterExpenseTool.AMOUNT_PARAMETER);
+        Long amountCents = amountCentsOf(call);
         String description = call.text(RegisterExpenseTool.DESCRIPTION_PARAMETER);
         String chosen = call.text(RegisterExpenseTool.CATEGORY_PARAMETER);
         String suggested = call.text(RegisterExpenseTool.SUGGESTED_CATEGORY_PARAMETER);
@@ -226,6 +226,32 @@ public class NluService {
             return Intent.unknown();
         }
         return new Intent.InviteMember(name, phone, confidenceOf(call, InviteMemberTool.CONFIDENCE_PARAMETER));
+    }
+
+    /**
+     * O valor em centavos, a partir do valor em reais que o modelo devolveu.
+     *
+     * <p>A multiplicacao por cem e feita <b>aqui</b>, e nao pelo modelo (mudado
+     * em 2026-09-18, com dado de producao). Pedir a conversao a um modelo de 8B
+     * era pedir aritmetica: "Mercado 500 fechar lista" voltou com 500 centavos e
+     * "comprei toda lista 500 mercado" com 5000, quando as duas eram R$ 500,00.
+     * O recibo mostrava R$ 5,00 e R$ 50,00, e ninguem alem de quem conferisse o
+     * numero perceberia -- erro silencioso, em dinheiro.
+     *
+     * <p>{@code BigDecimal} pela forma textual, nunca por {@code double}: o
+     * arredondamento de meio pra cima existe so para o modelo que insiste em
+     * devolver mais de duas casas, e centavo nenhum se perde no caminho.
+     *
+     * @return nulo tambem para valor nao positivo -- vira a pergunta "quanto
+     *         foi?", nunca um lancamento de zero
+     */
+    private Long amountCentsOf(ToolCall call) {
+        BigDecimal amount = call.decimal(RegisterExpenseTool.AMOUNT_PARAMETER);
+        if (amount == null) {
+            return null;
+        }
+        long cents = amount.movePointRight(2).setScale(0, java.math.RoundingMode.HALF_UP).longValue();
+        return cents <= 0 ? null : cents;
     }
 
     /**

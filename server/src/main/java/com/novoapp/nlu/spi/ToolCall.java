@@ -37,6 +37,23 @@ public record ToolCall(String toolName, Map<String, Object> arguments) {
         };
     }
 
+    /**
+     * Numero decimal exato, construido a partir da forma textual e nunca de um
+     * {@code double}: <code>new BigDecimal(49.90d)</code> vale
+     * 49.899999999999998578..., e isto aqui carrega dinheiro.
+     */
+    public java.math.BigDecimal decimal(String parameter) {
+        Object value = arguments.get(parameter);
+        if (value == null) {
+            return null;
+        }
+        try {
+            return new java.math.BigDecimal(String.valueOf(value).trim().replace(',', '.'));
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
     public Double number(String parameter) {
         Object value = arguments.get(parameter);
         return switch (value) {
