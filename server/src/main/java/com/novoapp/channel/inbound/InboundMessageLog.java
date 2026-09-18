@@ -43,6 +43,20 @@ public class InboundMessageLog implements PanacheRepositoryBase<InboundMessageEn
     }
 
     /**
+     * Falha que nao passou pelo orquestrador, e por isso nao tem
+     * {@link ProcessingOutcome} nenhum: o usuario recebeu o recibo de erro e a
+     * linha tem de contar a mesma historia que ele viu.
+     */
+    @Transactional
+    @IdentityScoped
+    public void markFailed(UUID messageId) {
+        InboundMessageEntity message = findById(messageId);
+        message.status = InboundMessageStatus.FAILED;
+        message.processedAt = Instant.now();
+        flush();
+    }
+
+    /**
      * Mensagem que nao virou acao de dominio nenhuma: onboarding, escolha de
      * household, ou update que esta etapa nao interpreta.
      */

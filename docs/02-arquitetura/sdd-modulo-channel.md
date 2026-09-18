@@ -2,7 +2,7 @@
 tipo: sdd
 modulo: channel
 status: escrito
-atualizado_em: 2026-09-07
+atualizado_em: 2026-09-18
 adrs:
   - ADR-0002
   - ADR-0005
@@ -106,6 +106,25 @@ não há bot publicado.
 - Envio ao provedor falha → tenta de novo; o usuário nunca fica sem resposta
   nenhuma depois que o processamento já rodou até o fim (sempre existe um
   recibo, de sucesso ou de erro).
+- **Quem responde pelo erro é `InboundPipeline`, e não o orquestrador
+  (corrigido em 2026-09-18).** Achado lendo o código enquanto se investigava uma
+  mensagem que parecia ter ficado sem resposta em produção — o log de ingestão
+  mostrou depois que aquela mensagem estava `EXECUTED`, e o silêncio era do
+  recorte do transcript. O caso era falso; o furo não.
+  `ConversationOrchestrator.process`
+  captura a falha dele próprio e responde recibo de erro; o `InboundDispatcher`
+  confiava nisso e registrava só no log. Nada respondia pela falha nascida
+  **antes** do orquestrador — `resolveContext`, onboarding,
+  `attachHousehold` —, e a mensagem terminava sem resposta nenhuma, que é o
+  desfecho que a tabela de falhas transversais do `sdd-visao-geral.md` proíbe em
+  uma linha ("o usuário nunca fica sem resposta") e o pior modo de falha deste
+  módulo, pelo mesmo motivo registrado em `provider_message_id` mais abaixo:
+  quem não recebe nada reenvia, e pode duplicar o que já foi gravado. O
+  `InboundPipeline` agora responde o recibo de erro e marca a mensagem `FAILED`.
+  `recordOutcome` ficou isolado em `try` próprio: falhar ao gravar o desfecho
+  depois de o recibo ter saído é problema de observabilidade, e mandar "não
+  consegui" atrás de um "Anotado:" que está gravado seria mentir para o
+  usuário.
 
 ## Dados que este módulo escreve
 

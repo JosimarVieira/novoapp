@@ -42,7 +42,11 @@ public final class InviteMemberTool {
                                         + "+5511999999999.")
                                 .build())
                         .addProperty(CONFIDENCE_PARAMETER, JsonNumberSchema.builder()
-                                .description("De 0 a 1, o quanto voce tem certeza desta interpretacao.")
+                                .description("De 0 a 1, o quanto voce tem certeza desta interpretacao. "
+                                + "Use valor alto so quando a pessoa pede claramente para chamar "
+                                + "alguem para a familia E escreveu o telefone. Sem telefone, use "
+                                + "valor baixo: convite emitido no palpite da a um numero errado o "
+                                + "caminho para dentro da familia.")
                                 .build())
                         .required(MEMBER_NAME_PARAMETER, PHONE_PARAMETER, CONFIDENCE_PARAMETER)
                         .build())

@@ -44,6 +44,13 @@ public class MistralMessageInterpreter implements MessageInterpreter {
             Mensagens reais sao curtas, sem pontuacao e em qualquer ordem: "mercado 50", "50 mercado",
             "gastei 50 no mercado", "acabou o arroz", "o que esta faltando?".
             Escolha exatamente uma ferramenta, a que melhor descreve o que a pessoa quis.
+            O tempo do verbo separa lista de compra, e errar isso e o erro mais caro aqui:
+            - pedido, no futuro ou no infinitivo -- "acabou o arroz", "falta arroz", "precisa de
+              arroz", "comprar arroz", "adiciona arroz", "adicionar arroz na lista", "colocar
+              arroz na lista", "poe arroz na lista" -- vai para adicionarItemLista;
+            - fato, no passado -- "comprei arroz", "ja comprei o arroz", "peguei o arroz",
+              "trouxe o arroz" -- vai para marcarItemComprado, mesmo que o item esteja entre os
+              itens pendentes do contexto. Estar na lista e justamente o normal nesse caso.
             Valor de dinheiro vai em reais, exatamente como a pessoa escreveu: em "mercado 50" o
             valor e 50. Nunca multiplique e nunca converta para centavos -- quem faz essa conta e o
             sistema.

@@ -225,6 +225,21 @@ Funcionalidade: Lançamento de despesa por chat
     E o household "Silva" continua com uma única categoria chamada "Alimentação"
     E uma despesa de R$ 90,00 é registrada nessa categoria
 
+  # Achado em uso real em 2026-09-18, e não pela suíte. `petshop` sozinho —
+  # categoria que existe na família, `categoryId` resolvido, só o valor
+  # faltando — recebeu "não entendi essa", minutos depois de o mesmo bot ter
+  # perguntado "Quanto foi em Ração?" na mesma conversa. O modelo devolveu
+  # confiança 0,3 e a faixa baixa decidia antes do passo que pergunta o valor.
+  # ADR-0033: o SDD já afirmava "valor ausente sempre pergunta" desde a Etapa
+  # 2a, sem ADR que sustentasse a frase e sem código que a cumprisse.
+  @saneamento
+  Cenário: Categoria existente sem valor pergunta o valor, mesmo com confiança baixa
+    Quando "Ana" envia "talvez mercado"
+    Então nenhuma despesa é registrada ainda
+    E "Ana" recebe uma pergunta curta pedindo o valor em "Mercado"
+    Quando "Ana" responde "50"
+    Então uma despesa de R$ 50,00 é registrada na categoria "Mercado"
+
   @saneamento
   Cenário: Responder com o nome da opção, e não com o número, continua sendo resposta
     Dado que o household "Silva" também tem a categoria de despesa "Mercado livre"
