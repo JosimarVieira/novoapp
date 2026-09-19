@@ -31,15 +31,14 @@ views:
       - data
       - modulos
       - depende_de
+    sort:
+      - property: numero
+        direction: ASC
     columnSize:
       file.name: 432
       note.status: 110
       note.data: 155
       note.modulos: 398
-    sort:
-      - property: numero
-        direction: ASC
-
   - type: table
     name: Por status
     groupBy:
@@ -53,7 +52,6 @@ views:
     sort:
       - property: numero
         direction: ASC
-
   - type: table
     name: Vigentes
     filters:
@@ -67,7 +65,6 @@ views:
     sort:
       - property: numero
         direction: ASC
-
   - type: table
     name: Em aberto
     filters:
@@ -81,7 +78,6 @@ views:
     sort:
       - property: numero
         direction: ASC
-
   - type: table
     name: Superadas
     filters:

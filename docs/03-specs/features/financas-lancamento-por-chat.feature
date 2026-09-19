@@ -252,6 +252,19 @@ Funcionalidade: Lançamento de despesa por chat
     E nenhuma chamada ao modelo é feita
     E "Ana" é avisada de que não há pergunta em aberto
 
+  # Achado em uso real em 2026-09-19, e o pior tipo de erro que este sistema
+  # pode cometer: `mercado` — uma palavra, nenhum número — voltou do Mistral
+  # como `{"categoria": "Mercado", "valor": 50}` e gravou R$ 50,00. Duas vezes
+  # em cem segundos. O prompt proibia inventar valor em duas linhas separadas.
+  # ADR-0034: sem dígito na mensagem não há valor a extrair, e o que vier é
+  # alucinação — a checagem é sobre o que a pessoa escreveu, não sobre o que o
+  # modelo respondeu, e por isso não depende do modelo.
+  @saneamento
+  Cenário: Valor que a pessoa não escreveu não vira lançamento
+    Quando "Ana" envia "compras no mercado"
+    Então nenhuma despesa é registrada ainda
+    E "Ana" recebe uma pergunta curta pedindo o valor em "Mercado"
+
   @saneamento
   Cenário: Responder com o nome da opção, e não com o número, continua sendo resposta
     Dado que o household "Silva" também tem a categoria de despesa "Mercado livre"

@@ -2,7 +2,7 @@
 tipo: sdd
 modulo: nlu
 status: escrito
-atualizado_em: 2026-09-16
+atualizado_em: 2026-09-19
 adrs:
   - ADR-0004
   - ADR-0009
@@ -11,9 +11,23 @@ adrs:
   - ADR-0024
   - ADR-0026
   - ADR-0029
+  - ADR-0034
 ---
 
 # SDD — Módulo `nlu`
+
+## O valor tem de estar escrito na mensagem (ADR-0034)
+
+Antes de montar `Intent.RegisterExpense`, `nlu` descarta o `valor` devolvido
+pelo modelo quando **a mensagem do usuário não tem nenhum dígito**. Em uso real,
+em 2026-09-19, `mercado` — uma palavra — voltou duas vezes com `valor: 50` e
+gravou R$ 50,00; o prompt proibia inventar valor em duas linhas, e o par
+`"mercado 50"` aparecia cinco vezes nele como exemplo. A
+[ADR-0034](../01-adr/0034-valor-so-vale-se-a-pessoa-escreveu-digito.md) fecha
+isso em código porque é a terceira vez que o valor sai errado em produção e as
+duas anteriores também só pararam quando saíram do prompt. Sem valor, o desfecho
+é a pergunta da [ADR-0033](../01-adr/0033-valor-ausente-com-categoria-conhecida-pergunta-o-valor.md).
+
 
 ## Responsabilidade
 

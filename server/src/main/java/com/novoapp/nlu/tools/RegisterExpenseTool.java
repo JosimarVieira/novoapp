@@ -74,7 +74,7 @@ public final class RegisterExpenseTool {
                                 .build())
                         .addProperty(AMOUNT_PARAMETER, JsonNumberSchema.builder()
                                 .description("Valor da despesa em reais, exatamente como a pessoa escreveu. "
-                                        + "Em \"mercado 50\" o valor e 50; em \"mercado 49,90\" e 49.90. "
+                                        + "Em \"farmacia 32\" o valor e 32; em \"mercado 49,90\" e 49.90. "
                                         + "Nao multiplique, nao converta para centavos, nao arredonde. "
                                         + "Deixe vazio se a pessoa nao disse o valor -- nunca invente um.")
                                 .build())
