@@ -117,6 +117,17 @@ public class StubMessageInterpreter implements MessageInterpreter {
             "madeireira 300", Map.of(
                     RegisterExpenseTool.CATEGORY_PARAMETER, "Madeireira",
                     RegisterExpenseTool.AMOUNT_PARAMETER, new BigDecimal("300"),
+                    RegisterExpenseTool.CONFIDENCE_PARAMETER, CERTAIN),
+            // O valor inventado, observado em producao em 2026-09-19: "mercado"
+            // sozinho voltou com valor 50 e gravou R$ 50,00. Regra burra nenhuma
+            // alucina -- e erro do modelo, nao padrao de linguagem --, entao a
+            // alucinacao entra aqui como Intent fixa (ADR-0034). A mensagem do
+            // cenario nao e "mercado" puro de proposito: esse texto tambem e
+            // resposta a pendencia no cenario de opcoes numeradas, e prender a
+            // alucinacao nele quebraria aquele cenario por tabela.
+            "compras no mercado", Map.of(
+                    RegisterExpenseTool.CATEGORY_PARAMETER, "Mercado",
+                    RegisterExpenseTool.AMOUNT_PARAMETER, new BigDecimal("50"),
                     RegisterExpenseTool.CONFIDENCE_PARAMETER, CERTAIN));
 
     /**

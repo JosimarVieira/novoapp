@@ -52,7 +52,7 @@ public class NluService {
                 List.copyOf(categoriesByLabel.keySet()), contextBuilder.pendingItemNames(householdId));
 
         return interpreter.interpret(request)
-                .map(call -> toIntent(call, categoriesByLabel))
+                                .map(call -> toIntent(call, text, categoriesByLabel))
                 .orElseGet(Intent::unknown);
     }
 
@@ -84,13 +84,13 @@ public class NluService {
                 contextBuilder.pendingItemNames(householdId));
 
         return interpreter.interpret(request)
-                .map(call -> toIntent(call, categoriesByLabel))
+                                .map(call -> toIntent(call, text, categoriesByLabel))
                 .orElseGet(Intent::unknown);
     }
 
-    private Intent toIntent(ToolCall call, Map<String, CategoryView> categoriesByLabel) {
+    private Intent toIntent(ToolCall call, String text, Map<String, CategoryView> categoriesByLabel) {
         return switch (call.toolName()) {
-            case RegisterExpenseTool.NAME -> registerExpense(call, categoriesByLabel);
+            case RegisterExpenseTool.NAME -> registerExpense(call, text, categoriesByLabel);
             case AddListItemTool.NAME -> addListItems(call);
             case MarkItemPurchasedTool.NAME -> markItemPurchased(call);
             case QueryListTool.NAME -> new Intent.QueryList(
@@ -117,9 +117,10 @@ public class NluService {
                 confidenceOf(call, ConfirmSuggestedCategoryTool.CONFIDENCE_PARAMETER));
     }
 
-    private Intent registerExpense(ToolCall call, Map<String, CategoryView> categoriesByLabel) {
+    private Intent registerExpense(ToolCall call, String text,
+                                   Map<String, CategoryView> categoriesByLabel) {
         double confidence = confidenceOf(call, RegisterExpenseTool.CONFIDENCE_PARAMETER);
-        Long amountCents = amountCentsOf(call);
+        Long amountCents = amountWrittenBy(call, text);
         String description = call.text(RegisterExpenseTool.DESCRIPTION_PARAMETER);
         String chosen = call.text(RegisterExpenseTool.CATEGORY_PARAMETER);
         String suggested = call.text(RegisterExpenseTool.SUGGESTED_CATEGORY_PARAMETER);
@@ -245,6 +246,28 @@ public class NluService {
      * @return nulo tambem para valor nao positivo -- vira a pergunta "quanto
      *         foi?", nunca um lancamento de zero
      */
+    /**
+     * O valor so vale se a pessoa escreveu algum digito (ADR-0034).
+     *
+     * <p>Em uso real, em 2026-09-19, a mensagem <code>mercado</code> -- uma
+     * palavra, nenhum numero -- voltou duas vezes como
+     * <code>{"categoria": "Mercado", "valor": 50, "confianca": 0.8}</code> e
+     * gravou R$ 50,00. O prompt proibia inventar valor em duas linhas
+     * separadas; o modelo inventou assim mesmo, completando o padrao do
+     * exemplo <code>"mercado 50"</code> que o proprio prompt repetia.
+     *
+     * <p>Proibir de novo no prompt seria a terceira tentativa da mesma coisa.
+     * Esta checagem nao depende do modelo: sem digito na mensagem, nao ha valor
+     * a extrair, e o que vier e alucinacao. O desfecho passa a ser a pergunta da
+     * ADR-0033 -- "Quanto foi em Mercado?" --, que e o certo.
+     */
+    private Long amountWrittenBy(ToolCall call, String text) {
+        if (text == null || text.chars().noneMatch(Character::isDigit)) {
+            return null;
+        }
+        return amountCentsOf(call);
+    }
+
     private Long amountCentsOf(ToolCall call) {
         BigDecimal amount = call.decimal(RegisterExpenseTool.AMOUNT_PARAMETER);
         if (amount == null) {

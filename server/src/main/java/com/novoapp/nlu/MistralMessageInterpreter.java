@@ -51,9 +51,11 @@ public class MistralMessageInterpreter implements MessageInterpreter {
             - fato, no passado -- "comprei arroz", "ja comprei o arroz", "peguei o arroz",
               "trouxe o arroz" -- vai para marcarItemComprado, mesmo que o item esteja entre os
               itens pendentes do contexto. Estar na lista e justamente o normal nesse caso.
-            Valor de dinheiro vai em reais, exatamente como a pessoa escreveu: em "mercado 50" o
-            valor e 50. Nunca multiplique e nunca converta para centavos -- quem faz essa conta e o
+            Valor de dinheiro vai em reais, exatamente como a pessoa escreveu: em "farmacia 32" o
+            valor e 32. Nunca multiplique e nunca converta para centavos -- quem faz essa conta e o
             sistema.
+            Mensagem sem numero nenhum nao tem valor. "mercado" sozinho e uma categoria sem valor:
+            deixe o parametro valor vazio. Repetir um valor de exemplo e inventar dinheiro.
             Responda SEMPRE chamando uma ferramenta. Nunca escreva a chamada como texto na resposta.
             Nunca invente valor, categoria, item nem hierarquia de categoria que a pessoa nao escreveu.
             Preencha sempre o parametro confianca, com honestidade: ele decide se o sistema executa
@@ -73,9 +75,11 @@ public class MistralMessageInterpreter implements MessageInterpreter {
             So use confianca alta na leitura 2 se estiver claro que a pessoa mudou de assunto. Se a
             mensagem puder ser uma resposta a pergunta, ainda que parcial ou mal escrita, ela e a
             leitura 1 -- responder com o nome de uma das opcoes, em vez do numero dela, e responder.
-            Valor de dinheiro vai em reais, exatamente como a pessoa escreveu: em "mercado 50" o
-            valor e 50. Nunca multiplique e nunca converta para centavos -- quem faz essa conta e o
+            Valor de dinheiro vai em reais, exatamente como a pessoa escreveu: em "farmacia 32" o
+            valor e 32. Nunca multiplique e nunca converta para centavos -- quem faz essa conta e o
             sistema.
+            Mensagem sem numero nenhum nao tem valor. "mercado" sozinho e uma categoria sem valor:
+            deixe o parametro valor vazio. Repetir um valor de exemplo e inventar dinheiro.
             Responda SEMPRE chamando uma ferramenta. Nunca escreva a chamada como texto na resposta.
             Nunca invente valor, categoria, item nem hierarquia de categoria que a pessoa nao escreveu.
             Preencha sempre o parametro confianca, com honestidade.""";
