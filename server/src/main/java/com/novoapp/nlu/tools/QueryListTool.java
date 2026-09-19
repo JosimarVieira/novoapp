@@ -19,7 +19,11 @@ public final class QueryListTool {
                 .description("Responde o que ainda esta faltando na lista de compras da familia.")
                 .parameters(JsonObjectSchema.builder()
                         .addProperty(CONFIDENCE_PARAMETER, JsonNumberSchema.builder()
-                                .description("De 0 a 1, o quanto voce tem certeza desta interpretacao.")
+                                .description("De 0 a 1, o quanto voce tem certeza desta interpretacao. "
+                                + "Use valor alto quando a pessoa pergunta o que falta ou so "
+                                + "nomeia a lista: 'minha lista', 'o que esta faltando?'. Use "
+                                + "valor baixo quando ela pode estar querendo mexer na lista, e "
+                                + "nao le-la.")
                                 .build())
                         .required(CONFIDENCE_PARAMETER)
                         .build())

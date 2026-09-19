@@ -46,8 +46,10 @@ public class InboundDispatcher {
             try {
                 pipeline.process(messageId, inbound);
             } catch (RuntimeException e) {
-                // A mensagem fica com o status que tiver; o usuario ja recebeu
-                // recibo de erro de dentro do pipeline.
+                // Rede de seguranca da thread, e nao o lugar do recibo de
+                // erro: quem responde ao usuario e o InboundPipeline, que tem o
+                // endereco de resposta e o texto. Chegar aqui significa que nem
+                // ele conseguiu -- entao so resta o log.
                 LOG.errorf(e, "Processamento assincrono da mensagem %s falhou", messageId);
             }
         });

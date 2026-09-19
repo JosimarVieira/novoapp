@@ -391,6 +391,18 @@ public class ExpenseByChatSteps {
         assertThat(fold(world.lastReplyTo(actor))).contains("quanto foi");
     }
 
+    /**
+     * Pedir o valor <b>nomeando a categoria</b> e o que separa a ADR-0033 de um
+     * "nao entendi" mais gentil: se a categoria nao aparecer na pergunta, o que
+     * o modelo ja tinha resolvido foi perdido no caminho.
+     */
+    @E("^\"([^\"]*)\" recebe uma pergunta curta pedindo o valor em \"([^\"]*)\"$")
+    public void receivesAmountQuestionFor(String actor, String category) {
+        String reply = world.lastReplyTo(actor);
+        assertThat(reply).contains(category);
+        assertThat(fold(reply)).contains("quanto foi");
+    }
+
     @E("^\"([^\"]*)\" recebe uma pergunta pedindo a categoria correta, não um erro genérico$")
     public void receivesCategoryQuestionNotGenericError(String actor) {
         String reply = world.lastReplyTo(actor);

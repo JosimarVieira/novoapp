@@ -433,12 +433,23 @@ public class ConversationOrchestrator {
             return interpreted(expense.confidence());
         }
 
+        PendingIntent.Option chosen = new PendingIntent.Option(expense.categoryId(),
+                expense.categoryDisplayName());
+
+        // ADR-0033: categoria resolvida e valor ausente pergunta o valor, em
+        // qualquer faixa -- tambem antes da faixa baixa, e pelo mesmo motivo do
+        // bloco de cima. "petshop" sozinho chegava com confianca 0,3 e a
+        // categoria "Pet shop" JA resolvida, e recebia "nao entendi essa". O
+        // SDD deste modulo afirmava "valor ausente sempre pergunta" desde a
+        // Etapa 2a; o codigo nao cumpria, e nenhuma ADR sustentava a frase.
+        if (!expense.hasAmount()) {
+            return registerOrAskAmount(context, chosen, null, expense.description(),
+                    message.id(), reply);
+        }
+
         if (level == ConfidencePolicy.Level.LOW) {
             return notUnderstood(reply, expense.confidence());
         }
-
-        PendingIntent.Option chosen = new PendingIntent.Option(expense.categoryId(),
-                expense.categoryDisplayName());
 
         if (level == ConfidencePolicy.Level.MEDIUM && expense.alternatives().size() > 1) {
             List<PendingIntent.Option> options = expense.alternatives().stream()
@@ -455,9 +466,12 @@ public class ConversationOrchestrator {
 
         // ADR-0029: confianca media com uma candidata so nao tem opcao a numerar,
         // mas continua sendo palpite -- vira sim/nao com a despesa ecoada de
-        // volta, em vez de executar. Sem valor, quem pergunta e o passo do valor
-        // logo abaixo: responder quanto foi ja e confirmar a categoria, e duas
-        // perguntas seguidas e o que o SDD deste modulo proibe.
+        // volta, em vez de executar. Sem valor quem pergunta e o passo do valor
+        // la em cima (ADR-0033): responder quanto foi ja e confirmar a
+        // categoria, e duas perguntas seguidas e o que o SDD deste modulo
+        // proibe. Por isso este if ainda pergunta por hasAmount: chegar aqui sem
+        // valor deixou de ser possivel, e a condicao fica como declaracao de que
+        // e assim que tem de ser.
         if (level == ConfidencePolicy.Level.MEDIUM && expense.hasAmount()) {
             String question = receipts.confirmExpense(reply.locale, chosen.label(),
                     expense.amountCents(), expense.description());

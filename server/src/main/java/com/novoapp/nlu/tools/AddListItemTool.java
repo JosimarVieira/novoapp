@@ -14,10 +14,16 @@ import dev.langchain4j.model.chat.request.json.JsonStringSchema;
  * numa resposta seriam varios recibos.
  *
  * <p>O nome pede a grafia dos itens pendentes, igual a
- * {@link MarkItemPurchasedTool}: enquanto a comparacao no banco for exata,
- * "cafe" e "Cafe" viram dois itens pendentes distintos, sem pergunta e sem
- * aviso. E mitigacao e nao conserto -- o conserto e a normalizacao de nome --,
- * mas e a mitigacao que custa uma frase.
+ * {@link MarkItemPurchasedTool}. Isso era mitigacao de furo enquanto a
+ * comparacao no banco era exata; desde a ADR-0030 o conserto existe -- nome casa
+ * pela forma normalizada -- e a frase fica por outro motivo: recibo que devolve
+ * "Cafe" onde a familia escreveu "Café" parece erro do bot.
+ *
+ * <p>A descricao diz o que esta ferramenta <b>nao</b> e, e nao so o que ela e.
+ * Em uso real, em 2026-09-18, "comprei cenoura" voltou do Mistral como
+ * adicionarItemLista com confianca 0,9 -- o item ja estava pendente, nada mudou,
+ * e o recibo foi "ja estava na lista". Confianca alta nao tem rede depois: aqui
+ * o prompt e a unica defesa.
  */
 public final class AddListItemTool {
 
@@ -34,7 +40,10 @@ public final class AddListItemTool {
     public static ToolSpecification specification() {
         return ToolSpecification.builder()
                 .name(NAME)
-                .description("Adiciona a lista de compras da familia o que a pessoa disse que esta faltando.")
+                .description("Adiciona a lista de compras da familia o que a pessoa disse que esta "
+                        + "faltando ou que quer comprar: 'acabou o arroz', 'falta arroz', "
+                        + "'comprar arroz', 'adicionar arroz na lista'. NAO use quando a pessoa "
+                        + "disser que JA comprou -- 'comprei arroz' e marcarItemComprado.")
                 .parameters(JsonObjectSchema.builder()
                         .addProperty(ITEMS_PARAMETER, JsonArraySchema.builder()
                                 .description("Um item por coisa mencionada.")
@@ -56,7 +65,12 @@ public final class AddListItemTool {
                                         .build())
                                 .build())
                         .addProperty(CONFIDENCE_PARAMETER, JsonNumberSchema.builder()
-                                .description("De 0 a 1, o quanto voce tem certeza desta interpretacao.")
+                                .description("De 0 a 1, o quanto voce tem certeza desta interpretacao. "
+                                + "Use valor alto quando esta claro que a pessoa quer por algo na "
+                                + "lista, mesmo que o produto seja desconhecido, a mensagem esteja "
+                                + "mal escrita ou sem verbo: 'colocar chocolate na lista' e "
+                                + "'adicionar feijao' sao claras. Use valor baixo so quando voce "
+                                + "nao sabe se ela quis a lista ou outra coisa.")
                                 .build())
                         .required(ITEMS_PARAMETER, CONFIDENCE_PARAMETER)
                         .build())

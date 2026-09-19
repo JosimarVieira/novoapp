@@ -2,7 +2,7 @@
 tipo: sdd
 modulo: conversation
 status: escrito
-atualizado_em: 2026-09-16
+atualizado_em: 2026-09-18
 adrs:
   - ADR-0004
   - ADR-0015
@@ -13,6 +13,7 @@ adrs:
   - ADR-0026
   - ADR-0029
   - ADR-0031
+  - ADR-0033
 ---
 
 # SDD — Módulo `conversation`
@@ -233,7 +234,17 @@ valer (responder `sim` não pode gastar chamada de modelo) e o que dá ao
      parece reportar confiança baixa sistematicamente quando precisa sugerir
      categoria nova. Se isso se confirmar na Etapa 5, o limiar é que está
      errado, não o caso;
-   - **valor ausente** sempre pergunta, porque não há valor a adivinhar.
+   - **valor ausente** sempre pergunta, porque não há valor a adivinhar —
+     **também na faixa baixa**, desde a
+     [ADR-0033](../01-adr/0033-valor-ausente-com-categoria-conhecida-pergunta-o-valor.md).
+
+     Esta frase estava aqui desde a Etapa 2a e o código não a cumpria: a faixa
+     baixa vinha antes e devolvia "não entendi". Em uso real, em 2026-09-18,
+     `petshop` sozinho — categoria que existe, `categoryId` resolvido, só o
+     valor faltando — recebeu "não entendi essa" minutos depois de o mesmo bot
+     ter perguntado "Quanto foi em Ração?". Design escrito sem ADR que o
+     sustente é design que ninguém tem como cobrar; a ADR-0033 é o lastro, e
+     fixa a ordem dos passos, não só a frase.
    - E a **descrição** ([ADR-0023](../01-adr/0023-descricao-de-lancamento-extraida-pelo-llm.md))
      nunca pergunta nada: ausência dela não reduz confiança e não impede
      execução.

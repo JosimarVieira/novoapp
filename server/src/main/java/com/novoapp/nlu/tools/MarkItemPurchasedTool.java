@@ -29,7 +29,10 @@ public final class MarkItemPurchasedTool {
     public static ToolSpecification specification() {
         return ToolSpecification.builder()
                 .name(NAME)
-                .description("Marca como comprado um item da lista de compras. Nao registra despesa.")
+                .description("Marca como comprado um item da lista de compras, quando a pessoa diz "
+                        + "no passado que ja comprou: 'comprei arroz', 'peguei o arroz', "
+                        + "'ja comprei o cafe'. Use tambem quando o item estiver entre os itens "
+                        + "pendentes do contexto -- e o caso normal. Nao registra despesa.")
                 .parameters(JsonObjectSchema.builder()
                         .addProperty(ITEM_PARAMETER, JsonStringSchema.builder()
                                 .description("Nome do produto comprado, no singular e com inicial maiuscula. "
@@ -37,7 +40,12 @@ public final class MarkItemPurchasedTool {
                                         + "use a grafia de la.")
                                 .build())
                         .addProperty(CONFIDENCE_PARAMETER, JsonNumberSchema.builder()
-                                .description("De 0 a 1, o quanto voce tem certeza desta interpretacao.")
+                                .description("De 0 a 1, o quanto voce tem certeza desta interpretacao. "
+                                + "Use valor alto quando a pessoa diz no passado que comprou algo, "
+                                + "mesmo que o item nao esteja entre os pendentes do contexto -- "
+                                + "esse caso tem tratamento proprio e nao e motivo para baixar a "
+                                + "confianca. Use valor baixo so quando nao esta claro se ela "
+                                + "comprou ou ainda vai comprar.")
                                 .build())
                         .required(ITEM_PARAMETER, CONFIDENCE_PARAMETER)
                         .build())
