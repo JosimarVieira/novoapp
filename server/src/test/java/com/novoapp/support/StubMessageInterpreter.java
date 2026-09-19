@@ -127,12 +127,33 @@ public class StubMessageInterpreter implements MessageInterpreter {
      */
     private volatile Duration artificialDelay = Duration.ZERO;
 
+    /**
+     * Quantas vezes o modelo foi chamado. Existe por causa da regra 6 do
+     * CLAUDE.md -- "confirmacoes nao gastam LLM" --, que ate 2026-09-19 nenhum
+     * teste conferia: era invariante de custo, e invariante que ninguem mede
+     * quebra em silencio. Foi o que aconteceu com "nao" sem pendencia.
+     *
+     * <p>Serve pra provar <b>zero</b> chamada, e nao pra contar quantas: a
+     * mensagem com hesitacao reentra neste metodo e conta duas vezes.
+     */
+    private final java.util.concurrent.atomic.AtomicInteger calls =
+            new java.util.concurrent.atomic.AtomicInteger();
+
+    public int callCount() {
+        return calls.get();
+    }
+
+    public void resetCallCount() {
+        calls.set(0);
+    }
+
     public void delayEachCallBy(Duration delay) {
         this.artificialDelay = delay;
     }
 
     @Override
     public Optional<ToolCall> interpret(InterpretationRequest request) {
+        calls.incrementAndGet();
         sleepIfAsked();
         if (request.text() == null || request.text().isBlank()) {
             return Optional.empty();

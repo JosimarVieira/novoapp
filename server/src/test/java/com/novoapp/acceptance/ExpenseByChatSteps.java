@@ -1,7 +1,10 @@
 package com.novoapp.acceptance;
 
+import com.novoapp.common.i18n.MessageKey;
+import com.novoapp.common.i18n.Messages;
 import com.novoapp.common.text.Normalization;
 import com.novoapp.support.Fixtures;
+import com.novoapp.support.StubMessageInterpreter;
 import io.cucumber.java.Before;
 import io.cucumber.java.pt.Dado;
 import io.cucumber.java.pt.E;
@@ -28,6 +31,9 @@ public class ExpenseByChatSteps {
 
     @Inject
     Fixtures fixtures;
+
+    @Inject
+    StubMessageInterpreter interpreter;
 
     @Before
     public void resetBetweenScenarios() {
@@ -389,6 +395,21 @@ public class ExpenseByChatSteps {
     @E("^\"([^\"]*)\" recebe uma pergunta curta pedindo o valor$")
     public void receivesAmountQuestion(String actor) {
         assertThat(fold(world.lastReplyTo(actor))).contains("quanto foi");
+    }
+
+    /**
+     * A regra 6 do CLAUDE.md e invariante de custo, e nenhum cenario a conferia
+     * ate 2026-09-19 -- foi assim que "nao" sem pendencia foi parar no modelo.
+     */
+    @Entao("^nenhuma chamada ao modelo é feita$")
+    public void noModelCall() {
+        assertThat(interpreter.callCount()).isZero();
+    }
+
+    @E("^\"([^\"]*)\" é avisada de que não há pergunta em aberto$")
+    public void toldNothingIsPending(String actor) {
+        assertThat(world.lastReplyTo(actor))
+                .isEqualTo(Messages.get(Messages.DEFAULT, MessageKey.NOTHING_PENDING));
     }
 
     /**

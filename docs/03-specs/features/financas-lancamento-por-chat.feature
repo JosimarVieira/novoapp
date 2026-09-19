@@ -240,6 +240,18 @@ Funcionalidade: Lançamento de despesa por chat
     Quando "Ana" responde "50"
     Então uma despesa de R$ 50,00 é registrada na categoria "Mercado"
 
+  # Achado em uso real em 2026-09-19. "não" sem pergunta nenhuma em aberto foi
+  # parar no Mistral, que devolveu `consultarLista` com confiança 0,3 — e o
+  # usuário recebeu "não entendi essa". A regra 6 do CLAUDE.md não condiciona a
+  # existência de pendência: "sim", "não", "1" e "desfazer" são resolvidos por
+  # curto-circuito determinístico antes de qualquer chamada de modelo.
+  @saneamento
+  Cenário: "não" sem pergunta em aberto não gasta chamada de modelo
+    Quando "Ana" envia "não"
+    Então nenhuma despesa é registrada
+    E nenhuma chamada ao modelo é feita
+    E "Ana" é avisada de que não há pergunta em aberto
+
   @saneamento
   Cenário: Responder com o nome da opção, e não com o número, continua sendo resposta
     Dado que o household "Silva" também tem a categoria de despesa "Mercado livre"

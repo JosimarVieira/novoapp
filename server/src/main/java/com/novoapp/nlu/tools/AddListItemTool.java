@@ -51,8 +51,11 @@ public final class AddListItemTool {
                                         .addProperty(ITEM_NAME_PARAMETER, JsonStringSchema.builder()
                                                 .description("Nome do produto, no singular e com inicial "
                                                         + "maiuscula, sem artigo: 'acabou o arroz' vira "
-                                                        + "'Arroz'. Se ele estiver entre os itens pendentes "
-                                                        + "informados no contexto, use a grafia de la.")
+                                                        + "'Arroz'. Se o MESMO produto estiver entre os itens "
+                                                        + "pendentes informados no contexto, use a grafia de "
+                                                        + "la -- e so a grafia: nunca troque o que a pessoa "
+                                                        + "escreveu por outro produto parecido que esteja na "
+                                                        + "lista.")
                                                 .build())
                                         .addProperty(ITEM_QUANTITY_PARAMETER, JsonNumberSchema.builder()
                                                 .description("Quanto, se a pessoa disse. Vazio no caso comum.")

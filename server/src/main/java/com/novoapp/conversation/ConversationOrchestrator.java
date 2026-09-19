@@ -368,13 +368,26 @@ public class ConversationOrchestrator {
     // ------------------------------------------------------------------
 
     private ProcessingOutcome interpretFresh(InboundMessage message, ResolvedContext context, Reply reply) {
-        // Sem pendencia aberta, desfazer volta a ser estorno (ADR-0025) -- e
-        // continua sem gastar chamada de modelo (regra 6).
-        if (ShortCircuit.classify(message.rawText()) == ShortCircuit.Answer.UNDO) {
-            return reverseLatest(context, reply);
-        }
-
-        return execute(nlu.interpret(context.householdId(), message.rawText()), message, context, reply);
+        // A regra 6 do CLAUDE.md nao condiciona a existencia de pendencia:
+        // "sim", "nao", "1" e "desfazer" sao resolvidos por curto-circuito
+        // deterministico ANTES de qualquer chamada de modelo. Ate 2026-09-19 so
+        // desfazer era, e "nao" sozinho ia pro Mistral -- que devolveu
+        // consultarLista com confianca 0,3, virando "nao entendi essa". Uma
+        // chamada paga para ler uma palavra que nao significa nada sozinha.
+        //
+        // NUMBER fica de fora de proposito: "50" sem pendencia pode ser o comeco
+        // de uma mensagem que o modelo ainda tem chance de entender, enquanto
+        // "sim" e "nao" nao tem leitura nenhuma sem pergunta antes.
+        return switch (ShortCircuit.classify(message.rawText())) {
+            // Sem pendencia aberta, desfazer volta a ser estorno (ADR-0025).
+            case UNDO -> reverseLatest(context, reply);
+            case YES, NO -> {
+                reply.send(receipts.nothingPending(reply.locale));
+                yield interpreted();
+            }
+            case NUMBER, OTHER ->
+                    execute(nlu.interpret(context.householdId(), message.rawText()), message, context, reply);
+        };
     }
 
     /**

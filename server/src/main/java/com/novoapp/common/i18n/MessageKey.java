@@ -91,6 +91,7 @@ public enum MessageKey {
     OPTION_LINE("option.line"),
     BULLET_LINE("bullet.line"),
     NOT_UNDERSTOOD("not.understood"),
+    NOTHING_PENDING("nothing.pending"),
     FAILURE("failure");
 
     private final String key;
