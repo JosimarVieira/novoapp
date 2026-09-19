@@ -297,6 +297,11 @@ public class ReceiptFormatter {
         return Messages.get(locale, MessageKey.NOT_UNDERSTOOD);
     }
 
+    /** Regra 6: "sim"/"nao" sem pendencia nenhuma, resolvido sem chamar o modelo. */
+    public String nothingPending(Locale locale) {
+        return Messages.get(locale, MessageKey.NOTHING_PENDING);
+    }
+
     public String failure(Locale locale) {
         return Messages.get(locale, MessageKey.FAILURE);
     }

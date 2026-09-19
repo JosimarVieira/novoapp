@@ -38,6 +38,9 @@ public class AcceptanceWorld {
     @Inject
     StubOutboundMessagePort outbound;
 
+    @Inject
+    com.novoapp.support.StubMessageInterpreter interpreter;
+
     private final Map<String, String> externalIds = new HashMap<>();
     private final Map<String, String> displayNames = new HashMap<>();
 
@@ -62,6 +65,7 @@ public class AcceptanceWorld {
     void reset() {
         fixtures.truncateAll();
         outbound.clear();
+        interpreter.resetCallCount();
         externalIds.clear();
         displayNames.clear();
         households.clear();
