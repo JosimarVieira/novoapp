@@ -164,12 +164,13 @@ faz, e que alguém encontraria usando.
    manda só texto, sem `reply_markup`/`request_contact`. O aceite funciona quando
    a pessoa compartilha o contato pelo menu do Telegram, mas o atrito é maior do
    que a ADR descreve. Um campo a mais no `sendMessage` resolve.
-2. **Não há retry com backoff quando o LLM falha.** A tabela de falhas
-   transversais do `sdd-visao-geral.md` prevê "mensagem fica `RECEIVED`, retry
-   com backoff, aviso no chat após a segunda falha". O que existe: uma tentativa,
-   recibo de erro no chat, mensagem marcada `FAILED`. A regra que não podia ser
-   quebrada — o usuário nunca fica sem resposta — está cumprida; a política de
-   retentativa, não.
+2. ~~**Não há retry com backoff quando o LLM falha.**~~ **Fechada em
+   2026-09-21**, depois de três etapas aberta. Duas tentativas dentro da mesma
+   tarefa assíncrona, 2s entre elas, 429 e defeito nosso sem repetição — não é
+   job nem agendador, é um laço na virtual thread que já processava a mensagem
+   (`sdd-modulo-nlu.md`). O que ficou de fora, declarado: a mensagem **não** volta
+   a `RECEIVED` para ser retomada mais tarde, como esta tabela prometia. Esgotadas
+   as tentativas ela morre `FAILED` com recibo, e quem reescreve é o usuário.
 3. **Não há comando para trocar o household ativo.** A [ADR-0007](../01-adr/0007-pessoa-em-multiplos-households.md) prevê troca
    por comando explícito ("usar casa dos pais"). Quem tem dois vínculos continua
    mandando tudo para o household ativo, sem como trocar pelo chat. Consequência

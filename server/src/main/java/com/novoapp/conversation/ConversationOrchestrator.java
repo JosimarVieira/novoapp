@@ -256,6 +256,20 @@ public class ConversationOrchestrator {
         Intent read = nlu.interpretAnsweringPending(context.householdId(), pending.questionAsked(),
                 message.rawText(), correctionOffered);
 
+        // Daqui para baixo houve chamada de modelo, e os quatro desfechos
+        // possiveis carregam qual prompt a produziu (ADR-0035). Aplicado aqui, e
+        // nao em cada return: quatro lugares para lembrar seriam quatro lugares
+        // para esquecer.
+        return afterPendingRead(read, correctionOffered, pending, context, message, reply)
+                .from(nlu.provenance());
+    }
+
+    private ProcessingOutcome afterPendingRead(Intent read,
+                                               boolean correctionOffered,
+                                               PendingActionService.Open pending,
+                                               ResolvedContext context,
+                                               InboundMessage message,
+                                               Reply reply) {
         if (read instanceof Intent.ConfirmSuggestedCategory correction) {
             // A correcao livre da ADR-0026. Confianca baixa repete a pergunta em
             // vez de criar categoria no palpite.
@@ -385,8 +399,11 @@ public class ConversationOrchestrator {
                 reply.send(receipts.nothingPending(reply.locale));
                 yield interpreted();
             }
+            // A unica saida deste switch que gasta modelo, e por isso a unica
+            // que carrega proveniencia (ADR-0035).
             case NUMBER, OTHER ->
-                    execute(nlu.interpret(context.householdId(), message.rawText()), message, context, reply);
+                    execute(nlu.interpret(context.householdId(), message.rawText()), message, context, reply)
+                            .from(nlu.provenance());
         };
     }
 

@@ -2,6 +2,7 @@ package com.novoapp.nlu;
 
 import com.novoapp.common.text.Normalization;
 import com.novoapp.finance.CategoryView;
+import com.novoapp.nlu.spi.InterpretationProvenance;
 import com.novoapp.nlu.spi.InterpretationRequest;
 import com.novoapp.nlu.spi.MessageInterpreter;
 import com.novoapp.nlu.spi.ToolCall;
@@ -37,6 +38,23 @@ public class NluService {
 
     @Inject
     MessageInterpreter interpreter;
+
+    /**
+     * Qual prompt e qual modelo respondem por uma interpretacao feita agora
+     * (ADR-0035).
+     *
+     * <p>Quem grava isso e <code>channel</code>, no log de ingestao, e nao este
+     * modulo: <code>nlu</code> nao persiste dado nenhum. Por isso o valor sobe
+     * pelo {@code ProcessingOutcome}, junto do resto do desfecho.
+     *
+     * <p>So faz sentido pedir depois de ter interpretado de fato. Mensagem
+     * resolvida por curto-circuito (regra 6) nao gastou modelo, e a linha dela
+     * fica com as duas colunas nulas -- que e o que distingue "nenhum modelo
+     * opinou" de "esqueceram de gravar".
+     */
+    public InterpretationProvenance provenance() {
+        return interpreter.provenance();
+    }
 
     /**
      * Nome em ingles, e nao <code>interpretar</code> como no SDD: identificador

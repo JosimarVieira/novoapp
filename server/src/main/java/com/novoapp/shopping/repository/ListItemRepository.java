@@ -13,6 +13,20 @@ import java.util.UUID;
 @ApplicationScoped
 public class ListItemRepository implements PanacheRepositoryBase<ListItem, UUID> {
 
+    /**
+     * Os itens pendentes cujos nomes a pessoa citou ao fechar a compra,
+     * comparados pela forma normalizada (ADR-0030) -- e o casamento que a Etapa 3
+     * faz entre "comprei o arroz e o leite" e o que esta na lista.
+     *
+     * <p>Nome citado que nao esta pendente simplesmente nao entra: quem decide o
+     * que fazer com isso e <code>conversation</code>, nunca este repositorio.
+     */
+    public List<ListItem> listPendingNamed(UUID shoppingListId, List<String> names) {
+        List<String> normalized = names.stream().map(Normalization::of).toList();
+        return list("shoppingListId = ?1 and status = ?2 and nameNormalized in ?3 order by createdAt",
+                shoppingListId, ListItemStatus.PENDING, normalized);
+    }
+
     /** O que esta faltando, na ordem em que foi pedido. */
     public List<ListItem> listPending(UUID shoppingListId) {
         return list("shoppingListId = ?1 and status = ?2 order by createdAt",

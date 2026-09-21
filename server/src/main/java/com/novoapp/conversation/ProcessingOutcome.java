@@ -1,5 +1,7 @@
 package com.novoapp.conversation;
 
+import com.novoapp.nlu.spi.InterpretationProvenance;
+
 /**
  * O que aconteceu com a mensagem, para <code>channel</code> registrar no log de
  * ingestao.
@@ -9,7 +11,33 @@ package com.novoapp.conversation;
  * <code>conversation</code> nao pode importar <code>channel</code>
  * (sdd-visao-geral.md).
  */
-public record ProcessingOutcome(Result result, Double confidence, String intentJson) {
+public record ProcessingOutcome(Result result,
+                                Double confidence,
+                                String intentJson,
+                                String promptVersion,
+                                String modelName) {
+
+    /**
+     * Desfecho sem proveniencia: mensagem que nao gastou chamada de modelo --
+     * curto-circuito da regra 6, ou falha antes da interpretacao. As duas
+     * colunas ficam nulas de proposito (ADR-0035).
+     */
+    public ProcessingOutcome(Result result, Double confidence, String intentJson) {
+        this(result, confidence, intentJson, null, null);
+    }
+
+    /**
+     * O mesmo desfecho, dizendo qual prompt e qual modelo o produziram
+     * (ADR-0035). Aplicado num lugar so, no ponto em que o orquestrador acaba de
+     * chamar <code>nlu</code> -- e nao dentro de cada um dos treze metodos que
+     * constroem um desfecho, que seria treze lugares para esquecer.
+     */
+    public ProcessingOutcome from(InterpretationProvenance provenance) {
+        return provenance == null
+                ? this
+                : new ProcessingOutcome(result, confidence, intentJson,
+                        provenance.promptVersion(), provenance.modelName());
+    }
 
     public enum Result {
         /** Interpretou e executou: existe lancamento gravado. */

@@ -1,5 +1,6 @@
 package com.novoapp.support;
 
+import com.novoapp.nlu.spi.InterpretationProvenance;
 import com.novoapp.nlu.spi.InterpretationRequest;
 import com.novoapp.nlu.spi.MessageInterpreter;
 import com.novoapp.nlu.spi.ToolCall;
@@ -50,6 +51,14 @@ import java.util.regex.Pattern;
 @Mock
 @ApplicationScoped
 public class StubMessageInterpreter implements MessageInterpreter {
+
+    /**
+     * Proveniencia declaradamente falsa (ADR-0035). Nao imita hash nem nome de
+     * modelo: linha de teste com cara de linha de producao e o comeco de uma
+     * metrica que conta mensagem que nunca existiu.
+     */
+    private static final InterpretationProvenance PROVENANCE =
+            new InterpretationProvenance("stub", "stub");
 
     private static final double CERTAIN = 1.0d;
     private static final double AMBIGUOUS = 0.5d;
@@ -160,6 +169,11 @@ public class StubMessageInterpreter implements MessageInterpreter {
 
     public void delayEachCallBy(Duration delay) {
         this.artificialDelay = delay;
+    }
+
+    @Override
+    public InterpretationProvenance provenance() {
+        return PROVENANCE;
     }
 
     @Override

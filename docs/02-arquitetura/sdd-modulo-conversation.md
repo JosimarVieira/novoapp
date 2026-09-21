@@ -14,6 +14,8 @@ adrs:
   - ADR-0029
   - ADR-0031
   - ADR-0033
+  - ADR-0035
+  - ADR-0036
 ---
 
 # SDD — Módulo `conversation`
@@ -192,10 +194,17 @@ valer (responder `sim` não pode gastar chamada de modelo) e o que dá ao
    - `sim` → executa o que a pendência guardava (criar categoria e lançar;
      registrar o item como comprado);
    - número → escolhe a opção, quando a pendência tem opções;
-   - qualquer outra coisa → repete a pergunta, **exceto** na pendência de
-     criação de categoria, onde vira correção livre e gasta uma segunda
-     chamada ao modelo ([ADR-0026](../01-adr/0026-hierarquia-na-criacao-de-categoria-por-chat.md),
-     exceção explícita à regra 6).
+   - qualquer outra coisa → uma chamada ao modelo com as ferramentas do dia a
+     dia, mais `confirmarCategoriaSugerida` quando a pendência é de criação de
+     categoria, e com a pergunta pendente no prompt de sistema
+     ([ADR-0029](../01-adr/0029-intencao-adiada-e-precedencia-de-mensagem-nova.md)).
+     O modelo escolhe entre responder à pergunta e mudar de assunto; superar a
+     pendência exige **confiança alta**, e média ou baixa mantém a pendência e
+     repete a pergunta. A correção livre da
+     [ADR-0026](../01-adr/0026-hierarquia-na-criacao-de-categoria-por-chat.md)
+     continua existindo e continua criando nome e hierarquia — o que deixou de
+     existir é a *segunda* chamada ao modelo que ela abria como exceção à regra
+     6. Ver "Mensagem nova com pergunta em aberto", mais abaixo.
 4. Havendo pendência **fora do prazo**, o atalho não existe mais
    ([ADR-0018](../01-adr/0018-central-de-pendencias.md)): o bot avisa que
    expirou, aponta para o aplicativo e repete a pergunta. A pendência continua
@@ -338,6 +347,32 @@ Duas consequências que valem registro:
 - a regra 6 do `CLAUDE.md` continua intacta: `sim`, `não`, `desfazer` e número
   seguem resolvidos antes de qualquer chamada. O que sumiu foi a *segunda*
   chamada — agora é uma só por mensagem, com ou sem pendência aberta.
+
+## O desfecho deste módulo é o que a Etapa 5 mede (decidido em 2026-09-19)
+
+A [ADR-0035](../01-adr/0035-o-que-a-etapa-5-mede.md) fixou como o portão de 90%
+é calculado, e o que ela mede é exatamente a saída de `ConfidencePolicy` mais os
+casos que escapam dela: **executar, perguntar, ou não entender**. Três
+consequências para este módulo:
+
+- **Pergunta esperada conta como acerto, pergunta desnecessária conta como
+  erro.** O que a ADR-0033 e a ADR-0029 acrescentaram de pergunta não penaliza a
+  métrica; o que este módulo pergunta sem precisar, sim.
+- **A taxa de fricção** — quanto das mensagens vira pergunta — é diagnóstico
+  deste módulo, não do `nlu`. Fricção alta com acerto alto é limiar mal
+  calibrado ([decisão aberta #7](../DECISOES-ABERTAS.md)), e os limiares moram
+  aqui, em `application.properties`.
+- **Pergunta nunca sai do denominador.** A ADR-0035 recusou isso explicitamente:
+  sairia bastando subir `novoapp.conversation.confidence.high`, e o portão subiria
+  junto com o produto piorando.
+
+`ProcessingOutcome` carrega a proveniência da interpretação
+([ADR-0036](../01-adr/0036-instrumento-de-medicao-da-etapa-5.md)) até `channel`,
+que é quem grava. Ela é aplicada em **dois** pontos — logo depois de cada chamada
+a `nlu`, e não dentro de cada um dos treze métodos que constroem um desfecho: um
+lugar por chamada de modelo é um lugar para lembrar; treze seriam treze para
+esquecer. Desfecho sem proveniência (o construtor de três argumentos) é o de quem
+não gastou modelo, e o nulo no banco significa exatamente isso.
 
 ## Gatilhos de revisão
 

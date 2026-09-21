@@ -65,6 +65,19 @@ public class ListItem extends PanacheEntityBase {
     public Instant purchasedAt;
 
     /**
+     * Qual fechamento comprou este item (ADR-0032: "o fechamento e a unidade" --
+     * o <code>desfazer</code> devolve a {@code PENDING} so o que aquele
+     * fechamento fechou, nunca a lista inteira).
+     *
+     * <p>Nulo em item marcado por <code>marcarItemComprado</code>, que nao passou
+     * por fechamento nenhum -- e e exatamente por isso que ele nao e desfazivel
+     * pelo chat, limite declarado naquela ADR. A coluna nula e onde esse limite
+     * fica visivel no schema, em vez de so na prosa.
+     */
+    @Column(name = "list_checkout_id")
+    public UUID listCheckoutId;
+
+    /**
      * Mensagem que pediu o item. So o UUID, sem relacao JPA, porque
      * <code>shopping</code> nao pode importar <code>channel</code> -- a
      * integridade fica na FK do banco, igual em <code>transaction</code>.

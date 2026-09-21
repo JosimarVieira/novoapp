@@ -38,6 +38,11 @@ public class InboundMessageLog implements PanacheRepositoryBase<InboundMessageEn
         };
         message.confidence = outcome.confidence();
         message.intentJson = outcome.intentJson();
+        // Nulos quando a mensagem nao gastou modelo (ADR-0035). Nao se
+        // sobrescreve com o valor "vigente" nesse caso: a coluna diz quem
+        // interpretou, e ninguem interpretou.
+        message.promptVersion = outcome.promptVersion();
+        message.modelName = outcome.modelName();
         message.processedAt = Instant.now();
         flush();
     }

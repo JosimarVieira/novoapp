@@ -32,16 +32,57 @@ Quatro testes que não podem faltar, porque cobrem as regras não negociáveis:
 
 - **Precisão do LLM não é teste unitário.** Prompt muda, modelo muda, e um
   assert de string vira ruído vermelho. A precisão é medida por um conjunto de
-  avaliação separado (`nlu-eval`), rodado sob demanda: N mensagens reais
-  anotadas com a intenção esperada, reportando taxa de acerto por tool e
-  matriz de confusão. Não bloqueia merge; bloqueia release.
-  A **descrição** do lançamento fica fora dessa taxa: é texto livre, não tem
-  gabarito contra o qual comparar, e incluí-la contaminaria o portão de 90%
-  que decide a continuidade na Etapa 5. Avaliada à parte, por amostra manual
-  ([ADR-0023](../01-adr/0023-descricao-de-lancamento-extraida-pelo-llm.md)).
+  avaliação separado (`nlu-eval`), rodado sob demanda sobre N mensagens reais
+  anotadas. Não bloqueia merge; bloqueia release. **O que ele reporta está
+  decidido na [ADR-0035](../01-adr/0035-o-que-a-etapa-5-mede.md)** — ver a seção
+  abaixo. `nlu-eval` ainda não existe: é o item 8 do que ficou de fora da
+  Etapa 1, e continua aberto.
 - **Estrutura interna.** Teste que quebra em refactor sem mudança de
   comportamento é passivo. Testamos a fronteira do módulo.
 - **Frontend Vue** até a Etapa 4. Antes disso não há frontend.
+
+## As três métricas da Etapa 5
+
+Decididas na [ADR-0035](../01-adr/0035-o-que-a-etapa-5-mede.md), em 2026-09-19,
+porque o portão de 90% do [ROADMAP](../../ROADMAP.md) existia desde 2026-08-31
+sem nenhum documento dizendo como era calculado.
+
+O gabarito anota **o desfecho esperado** — executar (com quais campos), perguntar
+(o quê), ou não entender —, e não a tool esperada. **Nenhuma mensagem sai do
+denominador de nenhuma das três.**
+
+| Métrica | O que é | Portão |
+|---|---|---|
+| **Acerto de interpretação** | Desfecho do sistema bate com o anotado. Pergunta esperada conta como acerto; pergunta desnecessária, como erro | **90% no fluxo de despesa** — é este que trava a Etapa 6 |
+| **Dano** | Escrita que a pessoa não pediu, **sem nenhuma confirmação no meio**: valor, categoria ou status de item que ela não escreveu | **Qualquer ocorrência de dinheiro inventado trava a Etapa 6**, independente do acerto |
+| **Fricção** | Fração das mensagens que vira pergunta, separando necessária de desnecessária | Nenhum. É diagnóstico: fricção alta com acerto alto é limiar mal calibrado ([#7](../DECISOES-ABERTAS.md)), com acerto baixo é interpretador ruim ([#3](../DECISOES-ABERTAS.md)) |
+
+Campos considerados no acerto: **categoria, valor e conta**. A **descrição** fica
+fora — é texto livre, não tem gabarito contra o qual comparar, e incluí-la
+contaminaria o portão
+([ADR-0023](../01-adr/0023-descricao-de-lancamento-extraida-pelo-llm.md)).
+Avaliada à parte, por amostra manual.
+
+A matriz de confusão **por tool** continua sendo reportada, mas como recorte e
+não como métrica principal: ela não enxerga a tool certa com o campo errado, que
+é o caso que mais dói (`registrarDespesa` com valor inventado acerta a tool,
+[ADR-0034](../01-adr/0034-valor-so-vale-se-a-pessoa-escreveu-digito.md)). Serve
+para decidir se o cardápio de seis tools precisa encolher.
+
+**O instrumento entrou em 2026-09-19**
+([ADR-0036](../01-adr/0036-instrumento-de-medicao-da-etapa-5.md)):
+`inbound_message` passou a gravar `prompt_version` e `model_name`, e a métrica é
+calculada **por `prompt_version`** — o prompt não se congela durante a medição,
+versiona-se, porque congelar exigiria deixar dinheiro errado de pé por quatro
+semanas. Nulo nas duas colunas significa "nenhum modelo opinou" (curto-circuito
+da regra 6, onboarding), e não lacuna.
+
+O gabarito anotado mora em [`nlu-eval/`](nlu-eval/), versionado, e não no banco:
+congelá-lo entre duas medições é o que o git faz. **O dataset ainda não existe** —
+a pasta tem o formato, não o conteúdo —, e `nlu-eval` como ferramenta também não:
+é o item 8 do que ficou de fora da Etapa 1, e continua aberto. Retenção da
+mensagem original segue a posição interina da ADR-0036: retém tudo durante a
+validação, decide na Etapa 6 ([#4](../DECISOES-ABERTAS.md), escopo LGPD).
 
 ## Duplas e stubs
 
@@ -51,12 +92,30 @@ Quatro testes que não podem faltar, porque cobrem as regras não negociáveis:
 
 ## Onde isso roda
 
-`.github/workflows/ci.yml`, a cada push na `main` e em todo pull request:
-`mvn test` (arquitetura, isolamento de tenant, idempotência, orçamento de
-resposta e os cenários Gherkin) e, se passar, `docker build` da imagem de
-deploy. Existe desde 2026-09-05 — antes disso, "falha o build" e "barra um
-merge" dependiam de alguém lembrar de rodar os testes, que é o tipo de
-disciplina que a [ADR-0003](../01-adr/0003-isolamento-multi-tenant-por-household.md) diz não funcionar.
+`.github/workflows/ci.yml`, a cada push na `main` e em todo pull request.
+Existe desde 2026-09-05 — antes disso, "falha o build" e "barra um merge"
+dependiam de alguém lembrar de rodar os testes, que é o tipo de disciplina que a
+[ADR-0003](../01-adr/0003-isolamento-multi-tenant-por-household.md) diz não
+funcionar.
+
+**São dois passos de teste, e só o primeiro é portão** (desde 2026-09-21):
+
+- `mvn test -DexcludedGroups=em-construcao` — arquitetura, isolamento de tenant,
+  idempotência, orçamento de resposta e os cenários das etapas fechadas. Verde
+  aqui significa **"nada regrediu"**, e é o que libera o `docker build`.
+- `mvn test -Dgroups=em-construcao`, com `continue-on-error` — a suíte da etapa
+  em construção, que nasce vermelha de propósito. Mostra o placar subindo cenário
+  a cenário sem derrubar o job.
+
+A separação saiu do primeiro push da Etapa 3: com a suíte do elo ligada, o job
+inteiro caía e levava junto o `docker build` — que existe justamente por uma
+regressão que já quebrou o deploy duas vezes. É a mesma disciplina que deu runner
+próprio ao `@saneamento` na Etapa 2a: escopo novo não pinta de vermelho o portão
+de uma etapa fechada.
+
+**Tirar `@Tag("em-construcao")` da classe é o ritual que marca a etapa fechada** —
+sem ela, a suíte passa a integrar o portão. A tag não se chama `etapa3` de
+propósito: na Etapa 2b ela muda de classe em vez de acumular uma por etapa.
 
 O `docker build` está no CI por um motivo específico: o build de deploy pula os
 testes, então nada mais garante que o `Dockerfile` compila. Foi a regressão que

@@ -21,4 +21,15 @@ public interface MessageInterpreter {
 
     /** @return vazio quando o modelo nao escolheu tool nenhuma */
     Optional<ToolCall> interpret(InterpretationRequest request);
+
+    /**
+     * Quem respondeu, e com qual instrucao estatica (ADR-0035).
+     *
+     * <p>E metodo da interface, e nao um default herdado de graca, de proposito:
+     * adaptador novo de provedor tem de responder essa pergunta antes de entrar
+     * em producao. Sem ela, quatro semanas de uso real produzem um log que nao e
+     * comparavel consigo mesmo -- que e exatamente o estado de que esta ADR
+     * nasceu.
+     */
+    InterpretationProvenance provenance();
 }
