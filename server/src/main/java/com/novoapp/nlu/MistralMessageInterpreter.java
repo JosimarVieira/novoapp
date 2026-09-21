@@ -2,6 +2,7 @@ package com.novoapp.nlu;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.novoapp.nlu.spi.InterpretationProvenance;
 import com.novoapp.nlu.spi.InterpretationRequest;
 import com.novoapp.nlu.spi.MessageInterpreter;
 import com.novoapp.nlu.spi.ToolCall;
@@ -15,18 +16,26 @@ import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.exception.RateLimitException;
+import dev.langchain4j.exception.RetriableException;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Supplier;
 
 /**
  * Function calling contra o provedor de LLM (ADR-0004), Mistral na fase de
@@ -90,20 +99,48 @@ public class MistralMessageInterpreter implements MessageInterpreter {
             indicou uma categoria-pai ("dentro de", "em"), com ela tambem. Nao invente categoria-pai
             que a pessoa nao escreveu.""";
 
+    /**
+     * Valor qualquer, fixo, no lugar das categorias reais ao calcular a
+     * impressao digital: sem ele a propriedade <code>categoria</code> sumiria do
+     * schema (ADR-0024) e a descricao dela ficaria fora do hash. Com ele, o
+     * enum entra com um valor constante -- a descricao e versionada, a familia
+     * nao.
+     */
+    private static final String FINGERPRINT_CATEGORY = "_";
+
     @Inject
     ChatModel chatModel;
 
     @Inject
     ObjectMapper objectMapper;
 
+    @ConfigProperty(name = "quarkus.langchain4j.mistralai.chat-model.model-name")
+    String modelName;
+
+    /**
+     * Tentativas de pipeline, contando a primeira. Duas, e nao tres: o
+     * LangChain4j ja tenta tres vezes por conta propria em cerca de 1,7s (ver
+     * comentario em <code>application.properties</code>), entao duas aqui ja sao
+     * ate seis chamadas ao provedor.
+     */
+    @ConfigProperty(name = "novoapp.nlu.mistral.retry.attempts", defaultValue = "2")
+    int retryAttempts;
+
+    @ConfigProperty(name = "novoapp.nlu.mistral.retry.backoff", defaultValue = "PT2S")
+    Duration retryBackoff;
+
+    private volatile InterpretationProvenance provenance;
+
     @Override
     public Optional<ToolCall> interpret(InterpretationRequest request) {
         List<ToolSpecification> tools = toolsFor(request);
 
-        ChatResponse response = chatModel.chat(ChatRequest.builder()
+        ChatRequest chat = ChatRequest.builder()
                 .messages(SystemMessage.from(systemPromptFor(request)), UserMessage.from(request.text()))
                 .toolSpecifications(tools)
-                .build());
+                .build();
+
+        ChatResponse response = callWithRetry(() -> chatModel.chat(chat), retryAttempts, retryBackoff);
 
         List<ToolExecutionRequest> toolCalls = response.aiMessage().toolExecutionRequests();
         if (toolCalls == null || toolCalls.isEmpty()) {
@@ -222,6 +259,163 @@ public class MistralMessageInterpreter implements MessageInterpreter {
         LOG.warnf("Modelo escreveu a chamada de %s como texto; recuperada do conteudo",
                 candidates.get(0).name());
         return Optional.of(new ToolCall(candidates.get(0).name(), arguments));
+    }
+
+    /**
+     * Uma tentativa a mais quando a falha e transitoria, dentro da mesma tarefa.
+     *
+     * <p>Fecha a lacuna aberta desde a Etapa 1 -- "retry com backoff" estava no
+     * desenho e nunca no codigo, e a mensagem morria na primeira falha de rede.
+     * O agravante e a idempotencia da ADR-0005: o webhook ja respondeu 200,
+     * entao o Telegram nao reenvia, e se reenviasse o guard descartaria. Nao ha
+     * segunda chance vinda de fora.
+     *
+     * <p><b>Nao e job nem agendador.</b> {@code InboundDispatcher} ja roda cada
+     * mensagem numa virtual thread propria, fora do ciclo do request; isto e um
+     * laco com espera dentro dessa mesma tarefa. Nada do que as ADRs 0014, 0020
+     * e 0028 recusaram ("processo rodando no vazio") entra aqui -- aquelas falam
+     * de estado derivado, e isto e trabalho inacabado.
+     *
+     * <p>Mora no adaptador, e nao em {@code NluService}, pelo mesmo motivo de
+     * {@link #recoverFromText}: decidir o que vale repetir exige olhar o tipo da
+     * excecao do provedor, e nenhum tipo do LangChain4j atravessa a fronteira
+     * {@code MessageInterpreter} (ADR-0009). Quem trocar de provedor na Etapa 5
+     * leva esta politica junto com o adaptador.
+     *
+     * <p>Custo declarado: com {@code timeout} de 20s e duas tentativas, o pior
+     * caso ate o recibo de erro fica em torno de 42s. Se isso se mostrar longo
+     * demais no uso real, o que se mexe e o <b>timeout</b>, nao o numero de
+     * tentativas -- e o timeout que domina a conta.
+     */
+    static ChatResponse callWithRetry(Supplier<ChatResponse> call, int attempts, Duration backoff) {
+        int limit = Math.max(1, attempts);
+        for (int attempt = 1; ; attempt++) {
+            try {
+                return call.get();
+            } catch (RuntimeException failure) {
+                if (attempt >= limit || !worthRetrying(failure)) {
+                    throw failure;
+                }
+                LOG.warnf("Tentativa %d de %d falhou (%s); repetindo em %s",
+                        attempt, limit, failure.getClass().getSimpleName(), backoff);
+                try {
+                    Thread.sleep(backoff.toMillis());
+                } catch (InterruptedException interrupted) {
+                    // Desligando. Restaura a flag e desiste com a causa real, e
+                    // nao com "interrompido": quem le o recibo precisa saber o
+                    // que de fato falhou.
+                    Thread.currentThread().interrupt();
+                    throw failure;
+                }
+            }
+        }
+    }
+
+    /**
+     * O LangChain4j 1.19 ja classifica a falha, e a classificacao dele e usada
+     * como esta -- menos em um ponto.
+     *
+     * <p>{@code RateLimitException} <b>e</b> uma {@code RetriableException} na
+     * biblioteca, e aqui nao e repetida. Insistir num 429 gasta cota para
+     * provavelmente tomar outro 429, e o tier gratuito do Mistral e exatamente
+     * onde isso doi: a ADR-0009 registra o throttling como negativa conhecida, e
+     * o proprio retry interno da biblioteca (tres vezes em 1,7s) ja foi o que
+     * obrigou a trocar de modelo por causa de limite de requisicao. O usuario
+     * recebe o recibo de erro e reescreve, que custa menos que a cota.
+     *
+     * <p>Excecao que nao seja {@code RetriableException} -- schema invalido,
+     * chave errada, modelo inexistente -- e defeito nosso: repetir so atrasa o
+     * aviso. O mesmo vale para qualquer excecao de fora dessa hierarquia, sobre
+     * a qual nao se sabe nada.
+     */
+    static boolean worthRetrying(RuntimeException failure) {
+        if (failure instanceof RateLimitException) {
+            return false;
+        }
+        return failure instanceof RetriableException;
+    }
+
+    /**
+     * A impressao digital da parte <b>estatica</b> do que este adaptador manda
+     * ao modelo (ADR-0035): os tres textos de prompt, as seis tools, e o nome e
+     * a descricao de cada parametro delas.
+     *
+     * <p>Fica de fora, de proposito, tudo que muda por mensagem -- categorias e
+     * itens do household, pergunta pendente. Aquilo e contexto, nao versao: se
+     * entrasse, cada familia teria a propria "versao de prompt" e a metrica da
+     * Etapa 5 nao agruparia nada.
+     *
+     * <p>E hash, e nao uma constante incrementada a mao, porque constante
+     * depende de alguem lembrar. As duas ultimas mudancas de comportamento
+     * observadas em producao foram edicoes na <i>descricao de um parametro</i>
+     * -- <code>confianca</code> e <code>marcarItemComprado</code> -- e e
+     * exatamente esse tipo de mudanca que ninguem trata como "versao nova".
+     *
+     * <p>Calculada uma vez, em campo volatil: o material e constante em tempo de
+     * execucao, e dois calculos concorrentes produzem o mesmo valor.
+     */
+    @Override
+    public InterpretationProvenance provenance() {
+        InterpretationProvenance cached = provenance;
+        if (cached == null) {
+            cached = new InterpretationProvenance(staticFingerprint(), modelName);
+            provenance = cached;
+        }
+        return cached;
+    }
+
+    static String staticFingerprint() {
+        StringBuilder material = new StringBuilder()
+                .append(GENERAL_PROMPT).append('\u0000')
+                .append(ANSWERING_PENDING_PROMPT).append('\u0000')
+                .append(CATEGORY_CORRECTION_HINT).append('\u0000');
+
+        for (ToolSpecification tool : List.of(
+                RegisterExpenseTool.specification(List.of(FINGERPRINT_CATEGORY)),
+                AddListItemTool.specification(),
+                MarkItemPurchasedTool.specification(),
+                QueryListTool.specification(),
+                InviteMemberTool.specification(),
+                ConfirmSuggestedCategoryTool.specification())) {
+            material.append(tool.name()).append('\u0000')
+                    .append(tool.description()).append('\u0000');
+            if (tool.parameters() != null && tool.parameters().properties() != null) {
+                tool.parameters().properties().forEach((name, schema) -> material
+                        .append(name).append('=')
+                        .append(descriptionOf(schema)).append('\u0000'));
+            }
+        }
+        return sha256Hex(material.toString()).substring(0, 12);
+    }
+
+    /**
+     * Os tipos de schema do LangChain4j nao compartilham um
+     * <code>description()</code> numa interface comum, entao a leitura e por
+     * reflexao. Falhar aqui degrada para o nome do tipo em vez de quebrar a
+     * interpretacao: a impressao digital fica mais fraca, a mensagem do usuario
+     * continua sendo respondida.
+     */
+    static String descriptionOf(Object schema) {
+        try {
+            return String.valueOf(schema.getClass().getMethod("description").invoke(schema));
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            return schema.getClass().getSimpleName();
+        }
+    }
+
+    private static String sha256Hex(String value) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder(digest.length * 2);
+            for (byte piece : digest) {
+                hex.append(Character.forDigit((piece >> 4) & 0xF, 16))
+                   .append(Character.forDigit(piece & 0xF, 16));
+            }
+            return hex.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 sempre existe na JVM", e);
+        }
     }
 
     private static Set<String> parameterNamesOf(ToolSpecification tool) {

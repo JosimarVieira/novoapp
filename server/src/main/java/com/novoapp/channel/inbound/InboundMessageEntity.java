@@ -63,4 +63,21 @@ public class InboundMessageEntity extends PanacheEntityBase {
 
     @Column(name = "confidence")
     public Double confidence;
+
+    /**
+     * Qual prompt e qual modelo produziram a interpretacao (ADR-0035). Nulos
+     * quando nao houve chamada de modelo -- curto-circuito da regra 6,
+     * onboarding, ou falha antes da interpretacao.
+     *
+     * <p>Sem eles as tres metricas da Etapa 5 nao sao calculaveis: o prompt
+     * mudou quatro vezes em quatro dias, e uma taxa que mistura versoes mede a
+     * media de quatro sistemas diferentes. A metrica e agrupada por
+     * <code>prompt_version</code>, que e o que permite corrigir dinheiro errado
+     * no meio da medicao sem contaminar a janela anterior.
+     */
+    @Column(name = "prompt_version")
+    public String promptVersion;
+
+    @Column(name = "model_name")
+    public String modelName;
 }
