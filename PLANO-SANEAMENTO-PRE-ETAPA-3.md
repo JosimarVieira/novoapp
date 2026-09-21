@@ -602,7 +602,13 @@ BUILD SUCCESS
 ```
 
 107 = os 89 anteriores, mais `TelegramWebhookSecretGuardTest` (5) e
-`SaneamentoAcceptanceTest` (13, cobrindo 6 cenários e 60 passos). A aritmética
+`SaneamentoAcceptanceTest` (13, cobrindo 6 cenários e 60 passos). *(Esse número
+é o do dia. Entre 2026-09-17 e 2026-09-19 o uso real acrescentou mais seis
+cenários `@saneamento` — hoje são 12: dez em `financas-lancamento-por-chat`, um
+em `mercado-lista-de-compras` e um em `vinculo-de-identidade` —, mais o
+instrumento de medicao da [ADR-0036](docs/01-adr/0036-instrumento-de-medicao-da-etapa-5.md).
+Em 2026-09-19 a suite fechou em **122 testes, todos verdes**, com a `V6`
+aplicada limpa em schema criado do zero.)* A aritmética
 fechar exatamente é a evidência que interessa: **nenhum cenário das Etapas 1 e
 2a foi perdido, alterado ou acrescentado**, e eles passaram sem nenhuma mudança
 nos `.feature` deles — que é o que prova que a ADR-0029 não mexeu em
@@ -657,8 +663,19 @@ HAVING count(*) > 1;
 
 Segue o corte do plano — o que só irrita espera o uso real medir:
 
-- mensagem que falha antes do orquestrador some sem recibo e sem retry, e a
-  reentrega do Telegram é descartada pela idempotência (revisar antes da Etapa 5);
+- ~~mensagem que falha antes do orquestrador some sem recibo e sem retry~~ —
+  **metade fechada em 2026-09-18**: `InboundPipeline` passou a capturar a falha
+  nascida antes do orquestrador (`resolveContext`, onboarding, `attachHousehold`),
+  responder recibo de erro e marcar a mensagem `FAILED`, com `recordOutcome`
+  isolado em `try` próprio (`sdd-modulo-channel.md`). **A outra metade — o retry com backoff — fechou em
+  2026-09-21**, antes da Etapa 3 e pelo motivo que este plano não tinha: durante
+  a etapa a família usa mais, e mensagem perdida corrompe o corpus que a
+  [ADR-0036](docs/01-adr/0036-instrumento-de-medicao-da-etapa-5.md) começou a
+  gravar. São duas tentativas dentro da mesma tarefa assíncrona, sem job —
+  nenhuma premissa das ADRs 0014/0020/0028 foi tocada, porque elas falam de
+  estado derivado e isto é trabalho inacabado. Fica declarado o que não foi
+  feito: a mensagem que esgota as tentativas continua morrendo `FAILED`, sem ser
+  retomada depois;
 - `ChooseHousehold` é beco sem saída, e anda junto do comando `usar <família>`
   quando ele for feito;
 - plural continua duplicando item e categoria ([ADR-0030](docs/01-adr/0030-correspondencia-de-nome-por-forma-normalizada.md) recusa por prazo);

@@ -207,8 +207,9 @@ As três lacunas que o ROADMAP mandava herdar **não** foram fechadas, e nenhuma
 tem cenário `@etapa2` que as cubra:
 
 - **botão nativo de compartilhar contato** no Telegram (hoje a pessoa digita);
-- **retry com backoff na falha de LLM** — continua virando recibo de erro na
-  primeira tentativa, com a mensagem em `FAILED`;
+- ~~**retry com backoff na falha de LLM**~~ — fechada em 2026-09-21, fora desta
+  etapa: duas tentativas na mesma tarefa assíncrona, sem job
+  (`sdd-modulo-nlu.md`);
 - **comando de trocar o household ativo**
   ([ADR-0007](../01-adr/0007-pessoa-em-multiplos-households.md)) — o bot ainda só
   pergunta qual família quando há mais de uma e nenhuma ativa; não há como

@@ -21,13 +21,17 @@ adrs:
   - ADR-0024
   - ADR-0025
   - ADR-0026
+  - ADR-0028
   - ADR-0030
+  - ADR-0036
 ---
 
 # Modelo de dados
 
-Escopo: Etapas 1 a 3. Tarefas está esboçado; agenda/recorrência fica fora até
-a Etapa 5 provar que o domínio é usado.
+Escopo: Etapas 1 a 3, mais o esboço de tarefas (Etapa 2b). Recorrência de
+tarefa **deixou de ficar fora**: foi decidida pela
+[ADR-0028](../01-adr/0028-recorrencia-de-tarefa.md) em 2026-09-08, antes de a
+`.feature` ser escrita, justamente para não virar premissa silenciosa.
 
 Regra que atravessa tudo: **`household_id NOT NULL` em toda tabela abaixo de
 `household`**, com RLS ativa ([ADR-0003](../01-adr/0003-isolamento-multi-tenant-por-household.md)). Exceção deliberada: `member` não tem
@@ -42,9 +46,10 @@ domínio não recebe privilégio nenhum sobre as três primeiras
 
 ## Diagrama (visão geral)
 
-Gerado em 2026-09-04 a partir das tabelas descritas abaixo — todas as
-tabelas e ADRs referenciadas neste diagrama estão **Aceitas** (última:
-[ADR-0021](../01-adr/0021-autenticacao-web.md), 2026-09-05). Todo retângulo abaixo de `household` carrega
+Gerado em 2026-09-04 a partir das tabelas descritas abaixo e revisado desde
+então — todas as tabelas e ADRs referenciadas neste diagrama estão **Aceitas**
+(a mais recente citada nele: [ADR-0028](../01-adr/0028-recorrencia-de-tarefa.md),
+2026-09-08). Todo retângulo abaixo de `household` carrega
 `household_id NOT NULL` + RLS
 ([ADR-0003](../01-adr/0003-isolamento-multi-tenant-por-household.md)), exceto `member` (identidade de pessoa, [ADR-0007](../01-adr/0007-pessoa-em-multiplos-households.md)) e
 `inbound_message` (`household_id` nullable até a identidade ser resolvida).
@@ -90,6 +95,8 @@ erDiagram
 
     HOUSEHOLD ||--o{ TASK : tem
     MEMBER ||--o{ TASK : "e_responsavel (assignee, opcional)"
+    HOUSEHOLD ||--o{ TASK_RECURRENCE : "tem (ADR-0028)"
+    TASK_RECURRENCE ||--o{ TASK : "materializa (uma ocorrencia por vez)"
 
     HOUSEHOLD {
         uuid id PK
@@ -217,6 +224,14 @@ erDiagram
         uuid household_id FK
         uuid assignee_member_id FK "nullable"
         text status "OPEN, DONE ou CANCELLED"
+        uuid recurrence_id FK "nullable, ADR-0028"
+    }
+    TASK_RECURRENCE {
+        uuid id PK
+        uuid household_id FK
+        text title
+        text frequency "DAILY, WEEKLY ou MONTHLY"
+        date until "nullable, nulo = sem fim"
     }
 ```
 
@@ -297,9 +312,24 @@ inbound_message
   provider_message_id, external_id_from,
   raw_text, received_at, processed_at,
   status (RECEIVED|INTERPRETED|EXECUTED|FAILED|IGNORED),
-  intent_json, confidence
+  intent_json, confidence,
+  prompt_version, model_name               -- quem interpretou, [ADR-0036](../01-adr/0036-instrumento-de-medicao-da-etapa-5.md)
   UNIQUE (channel, provider_message_id)     -- [ADR-0005](../01-adr/0005-idempotencia-de-mensagens-recebidas.md)
 ```
+
+`prompt_version` e `model_name` são a proveniência da interpretação
+([ADR-0036](../01-adr/0036-instrumento-de-medicao-da-etapa-5.md)). Sem elas as
+três métricas da [ADR-0035](../01-adr/0035-o-que-a-etapa-5-mede.md) não são
+calculáveis: o prompt mudou quatro vezes em quatro dias, e uma taxa que mistura
+versões mede a média de sistemas diferentes. **Nulas quando não houve chamada de
+modelo** — curto-circuito da regra 6, onboarding, falha antes da interpretação —,
+e esse nulo é sinal, não lacuna: é a fração de mensagens que o produto resolve
+sem gastar modelo, que ninguém media.
+
+`prompt_version` é hash da parte **estática** do que vai ao modelo (textos de
+prompt, tools, descrição de cada parâmetro), nunca do contexto injetado por
+mensagem: se as categorias do household entrassem, cada família teria a própria
+versão de prompt e a métrica não agruparia nada.
 
 `household_id` é nulo quando a identidade não é reconhecida (mensagem de
 número desconhecido). É a única exceção à regra de obrigatoriedade, e por isso
@@ -439,10 +469,17 @@ list_item
 
 list_checkout                     -- o elo
   id, household_id, shopping_list_id,
-  transaction_id,
+  transaction_id UK,              -- NOT NULL: fechamento sem lancamento nao existe
   items_purchased_count,
   performed_by_member_id, performed_at
 ```
+
+`list_item` ganhou `list_checkout_id` (nulável) na mesma migration: é o que diz
+**qual** fechamento comprou aquele item, e é o que o `desfazer` da
+[ADR-0032](../01-adr/0032-desfazer-alcanca-o-fechamento-inteiro.md) usa para
+devolver a `PENDING` só o que aquele fechamento fechou — "o fechamento é a
+unidade", não a lista. Nulo em item marcado por `marcarItemComprado`, que não
+passou por fechamento nenhum e por isso não é desfazível pelo chat.
 
 `list_checkout` materializa o diferencial do produto: liga o fechamento da
 lista ao lançamento financeiro. Ter tabela própria (em vez de só uma FK em
@@ -451,16 +488,43 @@ lista ao lançamento financeiro. Ter tabela própria (em vez de só uma FK em
 ## Tarefas (esboço)
 
 ```
-task
+task_recurrence                     -- a regra: "toda semana, sabado" (ADR-0028)
+  id, household_id, title, notes,
+  assignee_member_id (nullable),
+  frequency (DAILY|WEEKLY|MONTHLY),
+  day_of_week (nullable),           -- so WEEKLY
+  day_of_month (nullable),          -- so MONTHLY
+  until (nullable),                 -- nulo = sem fim
+  created_by_member_id, created_at, archived_at
+
+task                                -- a ocorrencia: "o sabado dia 14"
   id, household_id, title, notes,
   assignee_member_id (nullable), due_at (nullable),
   status (OPEN|DONE|CANCELLED),
   created_by_member_id, completed_by_member_id, completed_at,
-  source_message_id
+  source_message_id,
+  recurrence_id (nullable)          -- de qual regra esta ocorrencia nasceu, ADR-0028
 ```
 
-Recorrência deliberadamente ausente. Recorrência mal modelada é dívida cara;
-só entra depois que a Etapa 5 mostrar que tarefas são usadas de verdade.
+> **Correção de registro — 2026-09-19.** Este parágrafo dizia "recorrência
+> deliberadamente ausente… só entra depois que a Etapa 5 mostrar que tarefas são
+> usadas de verdade". Deixou de ser verdade em 2026-09-08, quando a
+> [ADR-0028](../01-adr/0028-recorrencia-de-tarefa.md) decidiu o assunto para a
+> Etapa 2b — e ela própria registra que fechava a divergência entre este
+> documento e a [decisão aberta #12](../DECISOES-ABERTAS.md) sobre *quando*
+> decidir. O schema acima é o dela. Corrigido no próprio documento, sem ADR de
+> superação: é registro que ficou para trás, não decisão que mudou.
+
+**A regra e a ocorrência são tabelas separadas** ([ADR-0028](../01-adr/0028-recorrencia-de-tarefa.md)).
+Só a próxima ocorrência existe por vez — concluir a de hoje materializa a do
+próximo sábado, sem job e sem agendador, mesma disciplina da
+[ADR-0014](../01-adr/0014-fechamento-de-fatura-sob-demanda.md) para fatura e da
+[ADR-0020](../01-adr/0020-convite-de-membro.md) para convite vencido.
+Consequência declarada: **quem nunca conclui não acumula** — três sábados sem
+ninguém tirar o lixo são uma tarefa vencida, não três.
+
+Nenhuma das duas existe no schema: `tasks` é a Etapa 2b, e a `.feature` do
+domínio ainda não foi escrita.
 
 ## Índices que já se sabe necessários
 
@@ -482,7 +546,7 @@ só entra depois que a Etapa 5 mostrar que tarefas são usadas de verdade.
 
 ## O que existe no banco hoje
 
-`server/src/main/resources/db/migration/`, três migrations:
+`server/src/main/resources/db/migration/`, sete migrations e um callback:
 
 - **`V1__initial_schema.sql`** (Etapa 1): `household`, `member`,
   `household_membership`, `channel_identity`, `household_invite`,
@@ -494,6 +558,33 @@ só entra depois que a Etapa 5 mostrar que tarefas são usadas de verdade.
   Era para ter entrado na Etapa 1 — a [ADR-0015](../01-adr/0015-internacionalizacao.md)
   vale "da Etapa 1 em diante" e ficou fora de todos os prompts de etapa até a
   auditoria da 2a encontrá-la.
+- **`V5__normalized_name.sql`** (saneamento, 2026-09-16): `category.name_normalized`
+  e `list_item.name_normalized`, os dois índices únicos reapontados para elas, e o
+  backfill que **aborta com a lista das linhas** se achar duplicata que só existia
+  por causa do acento ([ADR-0030](../01-adr/0030-correspondencia-de-nome-por-forma-normalizada.md)).
+- **`V7__list_checkout.sql`** (Etapa 3, 2026-09-21): `list_checkout` — o elo — e
+  `list_item.list_checkout_id`. A V3 deixou a tabela de fora de propósito ("criar
+  a tabela antes do comportamento que a usa deixaria schema morto no banco"); o
+  comportamento começou. `transaction_id` é `NOT NULL` e único: fechamento sem
+  lançamento não existe ([ADR-0031](../01-adr/0031-atomicidade-do-fechamento-de-compra.md)),
+  e um lançamento é de no máximo um fechamento — se dois apontassem para a mesma
+  `transaction`, o `desfazer` da [ADR-0032](../01-adr/0032-desfazer-alcanca-o-fechamento-inteiro.md)
+  não saberia qual reverter. `list_item.list_checkout_id` é nulável porque item
+  comprado por `marcarItemComprado`, fora de um fechamento, não tem checkout — e
+  é exatamente por isso que ele não é desfazível pelo chat, limite declarado
+  naquela ADR.
+- **`V6__interpretation_provenance.sql`** (2026-09-19):
+  `inbound_message.prompt_version` e `inbound_message.model_name`, o instrumento
+  da [ADR-0036](../01-adr/0036-instrumento-de-medicao-da-etapa-5.md). Duas colunas
+  nuláveis, sem índice e sem mudança de policy — `inbound_message` já é exclusiva
+  do papel pré-tenant.
+
+Fora da numeração, `afterMigrate.sql` roda a **cada start**, mesmo sem migração
+pendente, e reconcilia a senha do papel `novoapp_runtime` com a variável de
+ambiente. Não é migration de schema: existe porque a `V1` gravava a senha uma vez
+só e trocá-la depois deixava a aplicação com credencial que o banco não tinha —
+erro que só aparecia na primeira requisição, com o boot limpo (entrega da Etapa 1,
+achado 1 do primeiro uso em produção).
 
 Todas com RLS ativa e `FORCE`, exceto `member`
 ([ADR-0007](../01-adr/0007-pessoa-em-multiplos-households.md): não tem
@@ -515,8 +606,9 @@ duplicata que só existia por causa do acento — resolver é manual, e é o pre
 ter deixado o índice frouxo até aqui.
 
 As demais tabelas deste documento — `invoice`, `transaction_edit`,
-`financial_goal`, `goal_transaction_link`, `list_checkout`, `task` — estão
+`financial_goal`, `goal_transaction_link`, `task` e `task_recurrence` — estão
 modeladas aqui e **não existem no schema**: entram na etapa que precisar delas.
+`list_checkout` saiu desta lista em 2026-09-21, com a `V7`.
 `list_checkout` é o elo, Etapa 3; criá-la antes do comportamento que a usa
 deixaria schema morto no banco. O schema da Etapa 1 foi desenhado para não
 conflitar com nenhuma (`transaction` já carrega `invoice_id`, `installment_*` e

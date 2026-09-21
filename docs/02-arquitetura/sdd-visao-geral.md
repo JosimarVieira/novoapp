@@ -108,7 +108,7 @@ Caminho de erro em cada passo:
 
 | Falha | Comportamento |
 |---|---|
-| LLM indisponível ou timeout | Mensagem fica `RECEIVED`, retry com backoff, e aviso no chat após a segunda falha. Nunca adivinhar. |
+| LLM indisponível ou timeout | Duas tentativas dentro da mesma tarefa assíncrona, 2s entre elas, e recibo de erro no chat quando as duas falham (mensagem fica `FAILED`). Não é job: é um laço na virtual thread que já processa a mensagem. 429 e defeito nosso não são repetidos. Nunca adivinhar. Detalhado em `sdd-modulo-nlu.md`. |
 | Reentrega de webhook | Descarte silencioso ([ADR-0005](../01-adr/0005-idempotencia-de-mensagens-recebidas.md)) |
 | Identidade desconhecida | Sem convite pendente pro telefone → oferece criar household nova, só cria após confirmação explícita. Com convite pendente pro telefone → pede compartilhar contato pra aceitar. Nunca cria household nem aceita convite sem confirmação do usuário. Fluxo determinístico, sem LLM — ver [ADR-0020](../01-adr/0020-convite-de-membro.md) e `vinculo-de-identidade.feature`. |
 | `PendingAction` expirada no chat | Não é descartada: informa que expirou no chat e repete a pergunta ali; a mesma pendência também passa a aparecer na central de pendências do app (Etapa 4), com notificação, até ser resolvida — [ADR-0018](../01-adr/0018-central-de-pendencias.md). Duas saídas deliberadas: `desfazer` volta a significar estorno (a [ADR-0025](../01-adr/0025-desfazer-precedencia-e-escopo.md) dá precedência só a pendência não expirada) e mensagem que não é atalho segue como mensagem nova, para uma pendência esquecida não travar a conversa. Detalhado em `sdd-modulo-conversation.md`. |

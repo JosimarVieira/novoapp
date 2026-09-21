@@ -12,6 +12,8 @@ adrs:
   - ADR-0026
   - ADR-0029
   - ADR-0034
+  - ADR-0035
+  - ADR-0036
 ---
 
 # SDD — Módulo `nlu`
@@ -137,7 +139,7 @@ nlu/
   ContextBuilder             -- categorias (finance) e itens pendentes (shopping)
   Intent                     -- interface selada: uma variante por acao possivel
   tools/
-    RegisterExpenseTool          -- categoria (enum) | categoria_sugerida, valor_cents,
+    RegisterExpenseTool          -- categoria (enum) | categoria_sugerida, valor,
                                     descricao, conta, confianca
     AddListItemTool              -- itens[] (nome, quantidade, unidade), confianca
     MarkItemPurchasedTool        -- item, confianca
@@ -148,6 +150,7 @@ nlu/
     MessageInterpreter         -- fronteira com o provedor de LLM
     InterpretationRequest      -- texto + contexto real do household + proposito
     ToolCall                   -- a chamada escolhida, crua (nome + argumentos)
+    InterpretationProvenance   -- quem interpretou: prompt_version + model_name (ADR-0036)
   MistralMessageInterpreter  -- implementação LangChain4j (ADR-0009)
 ```
 
@@ -161,7 +164,8 @@ essa fronteira, o stub teria que imitar a API do LangChain4j em vez de imitar o
 resultado.
 
 **O nome da tool e dos parâmetros continua em português** (`registrarDespesa`,
-`categoria`, `valor_cents`) enquanto os identificadores Java viraram inglês
+`categoria`, `valor` — `valor_cents` à época, renomeado em 2026-09-18, ver
+acima) enquanto os identificadores Java viraram inglês
 (`RegisterExpenseTool`, `interpret`). Não é inconsistência: o nome da tool é
 dado enviado ao modelo, exatamente como a [ADR-0004](../01-adr/0004-interpretacao-por-function-calling-com-politica-de-confianca.md) o escreveu, e o modelo
 interpreta mensagem em português.
@@ -195,7 +199,7 @@ confiança média; aqui só se monta o cardápio. Se essa heurística se mostrar
 pobre na Etapa 5, o conserto é declarar as candidatas na própria tool, que é a
 alternativa registrada como não escolhida agora.
 
-**`valor_cents` saiu de `required`.** "paguei o mercado" precisa ser expressável
+**`valor` saiu de `required`** (`valor_cents` à época). "paguei o mercado" precisa ser expressável
 como despesa sem valor. Com o parâmetro obrigatório, o modelo não chamaria tool
 nenhuma, e o bot perderia a categoria que já tinha reconhecido — sem ela não há
 como fazer a "pergunta curta pedindo o valor" que o cenário exige. O único
@@ -249,15 +253,52 @@ só aparece quando a pessoa o escreve, respondendo à pergunta.
 
 ## Erros
 
-LLM indisponível ou timeout → mesma política da tabela de falhas
-transversais do `sdd-visao-geral.md`: mensagem fica `RECEIVED`, retry com
-backoff, aviso no chat após a segunda falha.
+LLM indisponível ou timeout → **duas tentativas dentro da mesma tarefa**, com
+espera de 2s entre elas, e recibo de erro no chat quando as duas falham. A
+mensagem fica `FAILED`.
 
-**Não implementado na Etapa 1**: o retry com backoff e o aviso após a segunda
-falha. Hoje a falha vira recibo de erro no chat na primeira tentativa e a
-mensagem fica `FAILED`. O usuário nunca fica sem resposta, que é a regra que não
-podia ser quebrada, mas a mensagem também não é retentada. Ver a seção do que
-ficou de fora em [`etapa-1-bot-telegram-e-despesa`](../05-entregas/etapa-1-bot-telegram-e-despesa.md).
+Implementado em 2026-09-21, fechando a lacuna aberta desde a Etapa 1 — "retry com
+backoff" estava no desenho e nunca no código, e a mensagem morria na primeira
+falha de rede. O agravante é a idempotência da
+[ADR-0005](../01-adr/0005-idempotencia-de-mensagens-recebidas.md): o webhook já
+respondeu 200, então o Telegram não reenvia, e se reenviasse o guard descartaria.
+Não há segunda chance vinda de fora.
+
+Quatro decisões que fazem parte disso, e não são detalhe de implementação:
+
+- **Não é job nem agendador.** `InboundDispatcher` já roda cada mensagem numa
+  virtual thread própria, fora do ciclo do request; isto é um laço com espera
+  dentro dessa mesma tarefa. Nada do que as ADRs
+  [0014](../01-adr/0014-fechamento-de-fatura-sob-demanda.md),
+  [0020](../01-adr/0020-convite-de-membro.md) e
+  [0028](../01-adr/0028-recorrencia-de-tarefa.md) recusaram entra aqui: aquelas
+  falam de **estado derivado**, que sempre tem um leitor natural, e isto é
+  **trabalho inacabado**, que não tem nenhum.
+- **Duas tentativas, não três.** O LangChain4j já tenta três vezes sozinho, em
+  ~1,7s (comentado em `application.properties`) — duas aqui são até seis chamadas
+  ao provedor.
+- **429 não é repetido**, apesar de a biblioteca classificar `RateLimitException`
+  como retriável. Insistir gasta cota do tier gratuito para provavelmente tomar
+  outro 429, e a [ADR-0009](../01-adr/0009-mistral-ai-como-provedor-de-llm-na-validacao.md)
+  já registra o throttling como negativa conhecida. O que não é
+  `RetriableException` — schema inválido, chave errada — também não é repetido:
+  é defeito nosso, e repetir só atrasa o aviso.
+- **A política mora no adaptador**, e não em `NluService`, pelo mesmo motivo de
+  `recoverFromText`: decidir o que vale repetir exige olhar o tipo da exceção do
+  provedor, e nenhum tipo do LangChain4j atravessa a fronteira `MessageInterpreter`
+  ([ADR-0009](../01-adr/0009-mistral-ai-como-provedor-de-llm-na-validacao.md)).
+
+Custo declarado: com `timeout` de 20s e duas tentativas, o pior caso até o recibo
+de erro fica em torno de **42s**. Se isso se mostrar longo demais no uso real, o
+que se mexe é o timeout, não o número de tentativas — é ele que domina a conta.
+
+O que **não** foi feito, e a frase anterior prometia: a mensagem não volta a
+ficar `RECEIVED` para ser retomada mais tarde. Esgotadas as tentativas, ela morre
+como `FAILED` com recibo, e quem reescreve é o usuário. Retomar depois exigiria
+ou um gatilho vindo da próxima mensagem da conversa — que produz recibo fora de
+ordem, sobre uma mensagem de horas atrás — ou o agendador que as três ADRs acima
+recusaram. Nenhum dos dois se justifica pelo caso que sobra: aplicação fora do
+ar, que é raro e cuja mitigação honesta é o aviso que o usuário já recebe.
 
 ~~Household sem nenhuma categoria ([ADR-0013](../01-adr/0013-household-novo-comeca-sem-categorias.md)) não gasta chamada de modelo: o
 enum do parâmetro ficaria vazio, que não é schema válido. Devolve confiança
@@ -271,6 +312,48 @@ nele que o fluxo de criação de categoria precisa funcionar.
 - ArchUnit: `nlu` não importa `channel`, `conversation`, `identity` nem `tasks`.
   Importa `finance` e `shopping`, só leitura.
 - Cenários `@etapa1` e `@etapa2` das três features.
+- `InterpretationFingerprintTest`: a impressão digital é estável para o mesmo
+  material (um hash que mudasse a cada boot faria cada mensagem cair no próprio
+  grupo, e não haveria o que agrupar) e a descrição de parâmetro é de fato lida,
+  e não o nome do tipo.
+
+## O que a Etapa 5 mede aqui (decidido em 2026-09-19)
+
+A [ADR-0035](../01-adr/0035-o-que-a-etapa-5-mede.md) escolheu **desfecho**, e não
+tool escolhida, como unidade da taxa de acerto. A matriz de confusão por tool
+continua sendo o dado que decide se o cardápio de seis precisa encolher — é o
+gatilho de revisão logo abaixo —, mas deixou de ser a métrica principal por um
+motivo que nasce neste módulo: **a tool certa com o campo errado é o caso que
+mais dói**, e a matriz por tool não o enxerga. `registrarDespesa` com valor
+inventado acerta a tool e destrói a confiança no saldo (ADR-0034).
+
+Os campos que entram na conta são **categoria, valor e conta**; `descricao` fica
+fora, por decisão já tomada na
+[ADR-0023](../01-adr/0023-descricao-de-lancamento-extraida-pelo-llm.md).
+
+**A fronteira passou a responder quem interpretou**
+([ADR-0036](../01-adr/0036-instrumento-de-medicao-da-etapa-5.md)):
+`MessageInterpreter.provenance()` devolve `prompt_version` e `model_name`, e é
+método da interface **sem `default`** — adaptador novo de provedor tem de
+responder isso antes de entrar em produção, pelo mesmo motivo que a ADR-0009
+proíbe tipo de biblioteca atravessar aqui.
+
+`prompt_version` é impressão digital SHA-256 (12 caracteres) da parte
+**estática** do que este módulo manda ao modelo: os três textos de prompt, as
+seis tools, e o nome e a **descrição de cada parâmetro**. A descrição entra
+porque é ela que muda o comportamento — as duas últimas mudanças observadas em
+produção foram edições em `confianca` e em `marcarItemComprado`, e nenhuma das
+duas seria tratada por quem edita como "versão nova". Fica de fora o contexto
+injetado por mensagem (categorias, itens, pergunta pendente): aquilo é contexto,
+não versão.
+
+A leitura da descrição é por reflexão — os tipos de schema do LangChain4j não
+compartilham um `description()` em interface comum — e falhar degrada para o nome
+do tipo em vez de quebrar a interpretação. `InterpretationFingerprintTest` existe
+para que essa degradação não passe silenciosa num upgrade da biblioteca.
+
+`nlu` **não grava** nada disso: quem grava é `channel`, no log de ingestão, e o
+valor sobe dentro do `ProcessingOutcome`.
 
 ## Gatilhos de revisão
 

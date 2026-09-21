@@ -23,7 +23,7 @@ Ordem de leitura para quem chega agora:
 | CLAUDE.md | Escrito |
 | Glossário | Escrito, aberto a novos termos |
 | ADRs | Índice vivo em [`adr.base`](adr.base) (Obsidian). Fora do Obsidian, navegue em [`01-adr/`](01-adr/) |
-| Modelo de dados | Escrito, cobre Etapas 1-3, com diagrama Mermaid |
+| Modelo de dados | Escrito, cobre Etapas 1-3 mais o esboço de tarefas (incluindo a recorrência decidida na [ADR-0028](01-adr/0028-recorrencia-de-tarefa.md)), com diagrama Mermaid |
 | SDD visão geral | Escrito |
 | SDD por módulo | Parcial — os 6 módulos com código estão escritos: `channel`, `identity`, `nlu`, `conversation`, `finance` e `shopping` (cada um com uma seção "Escopo desta versão" marcando o que fica pra frente), mais `tenancy` (pacote técnico, não módulo de domínio). `tasks` fica pra Etapa 2b |
 | Entregas | Etapas 1 e 2a escritas. Índice vivo em [`entrega.base`](entrega.base) (Obsidian) |

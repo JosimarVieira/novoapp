@@ -45,7 +45,7 @@ Adicione primeiro, use depois. Um conceito = um nome, sempre.
 
 | Termo | Código | Definição |
 |---|---|---|
-| Lista de compras | `ShoppingList` | Lista ativa do household. Um household tem no máximo uma lista ativa por vez — garantido por índice, não por disciplina de serviço. Nasce sob demanda, no primeiro item, e não no onboarding (`sdd-modulo-shopping.md`). |
+| Lista de compras | `ShoppingList` | Lista ativa do household. Um household tem no máximo uma lista ativa por vez — garantido por índice, não por disciplina de serviço. Nasce sob demanda, no primeiro item, e não no onboarding ([ADR-0027](../01-adr/0027-lista-de-compras-unica-e-sob-demanda.md)). |
 | Item da lista | `ListItem` | Item com status `PENDING` ou `PURCHASED`, com quem pediu e quem comprou. Quantidade e unidade são opcionais e nunca viram pergunta. Item que já está faltando não duplica: é reconhecido, com quem o pediu antes. |
 | Fechamento de compra | `ListCheckout` | Ato de marcar itens como comprados e gerar o lançamento correspondente. É o **elo** entre mercado e finanças. |
 

@@ -9,6 +9,7 @@ adrs:
   - ADR-0008
   - ADR-0020
   - ADR-0022
+  - ADR-0036
 ---
 
 # SDD — Módulo `channel`
@@ -132,6 +133,17 @@ não há bot publicado.
   ingestão, não um efeito colateral do sucesso). É a única tabela que `channel`
   toca, e sempre sob o papel pré-tenant ([ADR-0022](../01-adr/0022-papel-de-banco-pre-tenant-para-identidade.md)), o único com privilégio
   sobre ela.
+
+Desde 2026-09-19 `recordOutcome` grava também `prompt_version` e `model_name`
+([ADR-0036](../01-adr/0036-instrumento-de-medicao-da-etapa-5.md)) — a proveniência
+da interpretação, sem a qual as três métricas da
+[ADR-0035](../01-adr/0035-o-que-a-etapa-5-mede.md) não são calculáveis. Os valores
+vêm de `nlu` **através do `ProcessingOutcome`**, e não de uma chamada de `channel`
+a `nlu`: a regra de dependência não tem essa aresta, e o desfecho já era o
+caminho pelo qual `conversation` devolve o que este módulo grava. Ficam **nulos**
+quando a mensagem não gastou modelo — curto-circuito, onboarding, falha antes da
+interpretação —, e esse nulo é o que distingue "nenhum modelo opinou" de
+"esqueceram de gravar".
 
 ## `provider_message_id` no Telegram (decidido em 2026-09-05, ao implementar)
 

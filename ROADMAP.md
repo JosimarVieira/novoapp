@@ -187,15 +187,133 @@ Cenários novos levam a tag `@saneamento`, com `SaneamentoAcceptanceTest`
 próprio, pelo mesmo motivo que a Etapa 2a teve o seu: escopo novo não pode
 pintar de vermelho o portão de uma etapa fechada.
 
+## Uso real e correções (2026-09-17 a 2026-09-19)
+
+Não é etapa, não estava previsto e não entregou funcionalidade nova. Registrado
+aqui porque a alternativa é trabalho invisível — e porque é, de fato, **a
+Etapa 5 acontecendo fora de ordem**: a família usa o produto em produção desde
+2026-09-05, e todo o material abaixo nasceu de mensagem real, não de auditoria.
+
+Sete commits, duas ADRs novas e seis cenários `@saneamento` a mais (hoje 12 no
+total). Todos os defeitos são da mesma família: **o bot sabia o que a pessoa
+quis e respondeu que não sabia, ou gravou o que ela não escreveu.**
+
+- **2026-09-17** — a suíte completa rodou pela primeira vez depois do saneamento
+  (107 testes, verde). Categoria inexistente passou a oferecer criação também na
+  faixa baixa: `Pet shop 80`, sem ambiguidade nenhuma, chegava do Mistral com
+  `confianca` 0,3 e virava "não entendi essa"
+  (`sdd-modulo-conversation.md`).
+- **2026-09-18** — a conversão para centavos saiu do modelo: o parâmetro virou
+  `valor`, em reais, e `NluService` multiplica com `BigDecimal` a partir da forma
+  textual. Um modelo de 8B errava a aritmética, e R$ 500,00 virou R$ 5,00 e
+  R$ 50,00 em produção. Junto: nome de categoria nova escrito no campo errado
+  passou a valer como sugestão, e `MistralMessageInterpreter.recoverFromText`
+  passou a recuperar a chamada que o provedor devolve como texto
+  (`sdd-modulo-nlu.md`).
+- **2026-09-18** — [ADR-0033](docs/01-adr/0033-valor-ausente-com-categoria-conhecida-pergunta-o-valor.md):
+  categoria resolvida sem valor pergunta o valor em qualquer faixa de confiança.
+  Ela fixa a ordem dos passos dentro de `registerExpense`, e é o lastro de uma
+  frase que estava no SDD desde a Etapa 2a sem nenhuma ADR que a sustentasse. No
+  mesmo commit, `InboundPipeline` passou a responder pela falha nascida **antes**
+  do orquestrador, que até então terminava sem resposta nenhuma.
+- **2026-09-19** — [ADR-0034](docs/01-adr/0034-valor-so-vale-se-a-pessoa-escreveu-digito.md):
+  `nlu` descarta o valor devolvido pelo modelo quando a mensagem não tem nenhum
+  dígito. `mercado` — uma palavra — voltou duas vezes com `valor: 50` e gravou
+  R$ 50,00. É a terceira vez que dinheiro sai errado em produção, e a terceira
+  fechada em código e não em prompt.
+
+Quatro decisões abertas novas saíram daqui, todas de uso real:
+[#22, #23, #24 e #25](docs/DECISOES-ABERTAS.md). As três primeiras já não são
+dúvida de futuro — são comportamento acontecendo hoje sem cenário que o cubra.
+
+**O que este período torna visível sobre a Etapa 5**: ela pressupõe "sem feature
+nova, só uso e medição", e quatro dias de uso real produziram duas ADRs e sete
+commits. A premissa está errada, e nada disso foi medido — `nlu-eval` continua
+não existindo, e `inbound_message` não grava qual prompt nem qual modelo produziu
+cada interpretação, então o log deste período não é comparável consigo mesmo.
+
+## A ordem daqui em diante, decidida em 2026-09-19
+
+A Etapa 5 **não abre agora**, e a razão é a que o diagnóstico daquele dia
+expôs: entre 2026-09-16 e 2026-09-19, todo o trabalho foi em `nlu` e
+`conversation` — sete commits, quatro ADRs, quatro decisões abertas novas — e
+nenhuma linha em `fecharCompra`. Cada correção era justificável sozinha;
+`mercado` gravando R$ 50,00 do nada tinha de ser consertado no dia. O efeito
+somado é outro: o produto está sendo polido no eixo em que já é bom o bastante
+para uso familiar, e o eixo que decide se ele existe continua vazio. Uso real é
+um gerador infinito de defeitos pequenos e reais — ele não vai parar, e "conserto
+o que aparecer antes de seguir" é uma regra que nunca deixa a Etapa 3 começar.
+
+Há um motivo mecânico além do estratégico: **`fecharCompra` muda o que precisa
+ser medido.** Acrescenta uma sétima tool ao cardápio — e o
+[SDD de `nlu`](docs/02-arquitetura/sdd-modulo-nlu.md) já registra que seis é
+muito contexto —, cria `comprei tudo, 180`, que é a mensagem mais cara de errar
+que o produto terá, e ativa as [decisões #23 e #25](docs/DECISOES-ABERTAS.md),
+que são justamente as que sangram hoje. Gabarito anotado antes disso descreve um
+sistema que vai deixar de existir, e a
+[ADR-0035](docs/01-adr/0035-o-que-a-etapa-5-mede.md) só considera gabarito
+congelado.
+
+O que torna a espera barata é o instrumento da
+[ADR-0036](docs/01-adr/0036-instrumento-de-medicao-da-etapa-5.md): a proveniência
+grava sozinha, sem ninguém anotar nada. **A Etapa 5 acumula corpus enquanto a
+Etapa 3 é construída** — e o corpus passa a incluir as mensagens do elo.
+
+A ordem:
+
+1. ~~**Retry com backoff na falha de LLM.**~~ **Feito em 2026-09-21.** Duas
+   tentativas dentro da mesma tarefa assíncrona, 2s entre elas, 429 e defeito
+   nosso sem repetição (`sdd-modulo-nlu.md`). Lacuna aberta desde a Etapa 1, paga
+   agora não pelo motivo que o plano de saneamento dava ("revisar antes da
+   Etapa 5"), e sim porque durante a Etapa 3 a família usa mais e mensagem
+   perdida corrompe o corpus que a
+   [ADR-0036](docs/01-adr/0036-instrumento-de-medicao-da-etapa-5.md) começou a
+   gravar. **Sem ADR**: a suspeita de que contrariava as ADRs 0014/0020/0028 não
+   se confirmou — aquelas recusam job para manter **estado derivado**, que sempre
+   tem um leitor natural, e isto é **trabalho inacabado**, que não tem nenhum; e
+   a solução não precisou de agendador, porque `InboundDispatcher` já roda cada
+   mensagem numa virtual thread própria.
+2. **Etapa 3**, com as decisões #23 (`açúcar 20`) e #25 (remover item) resolvidas
+   **dentro** dela: as duas são o elo chegando cedo, não trabalho paralelo.
+3. **Inverter a autoridade da política de confiança** — guardas determinísticas
+   sobre o payload decidem o que der para decidir, faixa como resíduo. O
+   diagnóstico está fechado (o `confianca` do modelo aparece anticorrelacionado
+   nos casos que importam: 0,3 em `petshop`, `Pet shop 80` e `casa 20`, que
+   estavam certos; 0,8 e 0,9 em `mercado`, `açúcar 20` e `remover chocolate`, que
+   estavam errados). A ADR fica para **depois** da Etapa 3, para não congelar a
+   lista de guardas antes de `fecharCompra` acrescentar as dele.
+4. **Etapa 2b.**
+5. **Etapa 5**, com gabarito anotado uma vez, sobre um sistema que parou de mudar
+   de forma.
+
+Fica deliberadamente de lado até lá, por não ser caminho crítico do elo: a
+[decisão #22](docs/DECISOES-ABERTAS.md) (nome de produto sozinho), a
+[#24](docs/DECISOES-ABERTAS.md) (consultar categorias pelo chat), o comando
+`usar <família>` e o beco sem saída do `ChooseHousehold`.
+
 ## Etapa 3 — O elo (~1 semana)
 
 `fecharCompra` atômico, `list_checkout`, `desfazer` reversível dos dois lados.
 
 Os nove cenários estão escritos e marcados `@etapa3` na linha `Funcionalidade:`
-do [`elo-fechamento-de-compra.feature`](docs/03-specs/features/elo-fechamento-de-compra.feature). Falta o `Etapa3AcceptanceTest` —
-a tag torna os cenários selecionáveis, não cobertos. Nasce desabilitado, pelo
+do [`elo-fechamento-de-compra.feature`](docs/03-specs/features/elo-fechamento-de-compra.feature).
+O `Etapa3AcceptanceTest` existe desde 2026-09-19 e **nasceu desabilitado**, pelo
 mesmo motivo que o da Etapa 2 nasceu: escopo que falta deve ser visível na
-própria suíte.
+própria suíte, e não só aqui. O `@Disabled` sai no primeiro passo de código da
+etapa, não no último.
+
+Levantamento feito ao criá-lo, antes de qualquer código: dos **42 passos
+distintos** do arquivo, **18 já são atendidos** por `ExpenseByChatSteps` e
+`ShoppingListSteps` — enviar mensagem, assertar despesa registrada, consultar a
+lista, desfazer, reentrega. Os **24 restantes são novos**, e quase todos são
+sobre o que só passa a existir agora: item mudando de status em lote, o
+`list_checkout` ligando os dois lados, fechamento parcial, e a falha atômica. O
+passo `que o registro de despesas está indisponível` é o mais importante dos 24:
+sem ele o cenário de falha não prova a atomicidade da
+[ADR-0031](docs/01-adr/0031-atomicidade-do-fechamento-de-compra.md) — o terceiro
+dos quatro testes obrigatórios da
+[estratégia de testes](docs/04-qualidade/estrategia-de-testes.md), e o único que
+nunca existiu.
 
 Nenhum cenário do elo é destacável para a 2a. Todos passam por `fecharCompra`,
 e o cenário de falha ("nenhum item muda de status, nenhuma despesa é
@@ -245,13 +363,41 @@ corrigir e recategorizar, com dashboard inicial e central de pendências.
 
 ## Etapa 5 — Uso real na família (4 semanas)
 
-Sem feature nova. Só uso e medição.
+Sem feature nova era a premissa, e ela **já se provou errada**: a família usa o
+produto desde 2026-09-05, e quatro dias de uso real (ver a seção acima)
+produziram duas ADRs e sete commits. A etapa é uso, medição **e** o conserto do
+que o uso expuser.
 
-**Entregável**: taxa de acerto por tool, matriz de confusão, lista dos erros
-reais, limiar de confiança calibrado. Decisões abertas 3, 7, 8 resolvidas.
+**Entregável**: as três métricas da
+[ADR-0035](docs/01-adr/0035-o-que-a-etapa-5-mede.md), matriz de confusão por
+tool, lista dos erros reais, limiar de confiança calibrado. Decisões abertas
+3, 7, 8 resolvidas.
 
-Critério de continuidade: se a taxa de acerto de despesa ficar abaixo de 90%,
-a Etapa 6 não começa. Precisão do interpretador é o produto.
+**Critério de continuidade**, com fórmula desde a
+[ADR-0035](docs/01-adr/0035-o-que-a-etapa-5-mede.md) — antes dela o número
+existia sem definição:
+
+- **taxa de acerto de interpretação abaixo de 90% no fluxo de despesa → a Etapa 6
+  não começa.** O desfecho anotado é executar, perguntar ou não entender;
+  pergunta esperada conta como acerto, pergunta desnecessária conta como erro, e
+  **nenhuma mensagem sai do denominador** — senão bastaria afrouxar o limiar para
+  o portão subir com o produto piorando;
+- **qualquer ocorrência de dinheiro gravado que a pessoa não escreveu → a Etapa 6
+  não começa**, independente da taxa acima. É a única classe de erro que não se
+  anuncia, e a [ADR-0034](docs/01-adr/0034-valor-so-vale-se-a-pessoa-escreveu-digito.md)
+  foi a terceira correção da mesma coisa em duas semanas.
+
+Precisão do interpretador é o produto.
+
+**Pré-requisito, metade feita em 2026-09-19**
+([ADR-0036](docs/01-adr/0036-instrumento-de-medicao-da-etapa-5.md)):
+`inbound_message` passou a gravar `prompt_version` e `model_name`, a métrica é
+calculada por versão de prompt — que é o que permite corrigir dinheiro errado no
+meio da medição sem contaminar a janela anterior —, e o gabarito ganhou formato e
+lugar ([`docs/04-qualidade/nlu-eval/`](docs/04-qualidade/nlu-eval/)).
+
+**Continua faltando**: o `nlu-eval` em si (item 8 do que ficou de fora da Etapa 1)
+e o dataset anotado. É o que ainda bloqueia a etapa — não o calendário.
 
 ## Etapa 6 — Verticalização comercial
 
