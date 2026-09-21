@@ -207,6 +207,43 @@ de um fechamento não é desfazível pelo chat, porque não cria lançamento e
 portanto não é alcançável pelo alvo da
 [ADR-0025](../01-adr/0025-desfazer-precedencia-e-escopo.md).
 
+### Quem orquestra o `desfazer` do fechamento (decidido em 2026-09-21)
+
+A [ADR-0032](../01-adr/0032-desfazer-alcanca-o-fechamento-inteiro.md) deixou isto
+explicitamente para a Etapa 3: *"`reverseLatest` passa a precisar saber se o
+lançamento veio de um fechamento, o que acopla `finance` à existência de
+`list_checkout` — ou obriga `shopping` a ser quem orquestra o desfazer. Qual dos
+dois fica com o método é decisão da Etapa 3, ao escrever; esta ADR decide o
+comportamento, não o arquivo."*
+
+A regra de dependência elimina metade sozinha: `finance` não pode importar
+`shopping`, então `reverseLatest` não tem como consultar `list_checkout`.
+Restavam duas saídas, e nenhuma boa — `shopping` orquestrar todo `desfazer`
+faria o estorno de uma despesa avulsa passar pelo módulo de mercado, e
+`conversation` perguntar antes quebraria a transação única que a ADR-0032 exige.
+
+**Decidido: `finance.reverseLatest` publica um evento CDI `ExpenseReversed`
+dentro da própria transação, e `shopping` observa.** É o mesmo padrão do
+`HouseholdCreated` → `finance` cria a conta `WALLET`, que existe desde a Etapa 1
+exatamente para não inverter a direção de dependência (`sdd-modulo-identity.md`).
+Observador CDI síncrono roda na mesma transação, então a atomicidade se mantém,
+`finance` nunca ouve falar de `list_checkout`, e o `desfazer` de despesa avulsa
+continua sendo só `finance`.
+
+**Não contradiz a alternativa D da ADR-0031.** Aquela descartou *evento
+assíncrono*, e a objeção era literalmente "evento assíncrono garante o contrário
+— a lista fecharia primeiro". Observador síncrono na mesma transação não tem esse
+problema; é o mesmo mecanismo que a
+[ADR-0022](../01-adr/0022-papel-de-banco-pre-tenant-para-identidade.md) já usa ao
+recusar dois datasources para manter o onboarding atômico.
+
+O risco desta escolha, declarado: **acoplamento que o ArchUnit não vê.** Um
+observador de evento não é um `import`, então nenhuma regra de fronteira quebra
+se `shopping` passar a reagir a eventos de `finance` para coisas que não são o
+elo. A disciplina aqui é humana, e a mitigação é esta seção — se aparecer um
+segundo `@Observes` de evento de `finance` neste módulo, a fronteira merece
+revisão antes do código.
+
 ## Gatilhos de revisão
 
 - **Etapa 3**: `fecharCompra`, `list_checkout` e a atomicidade lista+lançamento

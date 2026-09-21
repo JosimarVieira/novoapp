@@ -166,6 +166,22 @@ converte em recibo de erro no chat (nunca silêncio).
   mandou cobrir nos dois caminhos de entrada — o caminho do chat está no cenário
   `@etapa2` correspondente.
 
+## O `desfazer` publica um evento, e não consulta mercado (decidido em 2026-09-21)
+
+`reverseLatest` precisa que os itens de um fechamento voltem a `PENDING`
+([ADR-0032](../01-adr/0032-desfazer-alcanca-o-fechamento-inteiro.md)), e não pode
+saber o que é um fechamento: `finance` não importa `shopping`, e a ADR-0032
+deixou para a Etapa 3 escolher quem fica com o método.
+
+Escolhido: **este módulo publica `ExpenseReversed` dentro da própria transação**,
+e `shopping` observa (`sdd-modulo-shopping.md`, onde o raciocínio completo está).
+É o espelho do `HouseholdCreated` que este mesmo módulo já **observa** para criar
+a conta `WALLET` — mesma razão dos dois lados: manter a direção de dependência
+que o `sdd-visao-geral.md` trava, sem abrir mão da transação única.
+
+`finance` continua sem saber que `list_checkout` existe. O que ele afirma é só o
+fato do seu próprio domínio: um lançamento foi estornado.
+
 ## Gatilhos de revisão
 
 - **Edição de campo com histórico** ([ADR-0012](../01-adr/0012-edicao-de-lancamento-entre-membros.md),

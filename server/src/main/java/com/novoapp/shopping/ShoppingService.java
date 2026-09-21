@@ -2,10 +2,14 @@ package com.novoapp.shopping;
 
 import com.novoapp.common.tenancy.HouseholdScoped;
 import com.novoapp.common.text.Normalization;
+import com.novoapp.finance.FinanceService;
+import com.novoapp.finance.RegisteredExpense;
+import com.novoapp.shopping.entity.ListCheckout;
 import com.novoapp.shopping.entity.ListItem;
 import com.novoapp.shopping.entity.ListItemStatus;
 import com.novoapp.shopping.entity.ShoppingList;
 import com.novoapp.shopping.entity.ShoppingListStatus;
+import com.novoapp.shopping.repository.ListCheckoutRepository;
 import com.novoapp.shopping.repository.ListItemRepository;
 import com.novoapp.shopping.repository.ShoppingListRepository;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -22,12 +26,14 @@ import java.util.UUID;
 /**
  * Lista de compras do household (sdd-modulo-shopping.md).
  *
- * <p>Nao cria lancamento nenhum: marcar item comprado nao mexe em dinheiro. O
- * elo lista -> despesa e <code>fecharCompra</code>, Etapa 3.
+ * <p><code>marcarItemComprado</code> nao mexe em dinheiro: marca o item e nada
+ * mais. Quem junta os dois dominios e {@link #checkout} -- o elo, e o
+ * diferencial do produto (CLAUDE.md).
  *
  * <p>Nao pergunta nada. Quando o item nao esta na lista, devolve
  * {@link MarkPurchasedResult.NotOnTheList} e quem transforma isso em pergunta e
- * <code>conversation</code> (ADR-0018).
+ * <code>conversation</code> (ADR-0018). O mesmo vale para
+ * {@link CheckoutResult.NoActiveList}.
  */
 @ApplicationScoped
 public class ShoppingService {
@@ -37,6 +43,17 @@ public class ShoppingService {
 
     @Inject
     ListItemRepository items;
+
+    @Inject
+    ListCheckoutRepository checkouts;
+
+    /**
+     * A aresta que a regra de dependencia sempre permitiu e que so agora existe
+     * em tempo de execucao: <code>shopping</code> pode depender de
+     * <code>finance</code>, nunca o contrario (sdd-visao-geral.md, ArchUnit).
+     */
+    @Inject
+    FinanceService finance;
 
     @Inject
     Clock clock;
@@ -130,6 +147,79 @@ public class ShoppingService {
         items.persist(item);
         items.flush();
         return new MarkPurchasedResult.Purchased(item.name);
+    }
+
+    /**
+     * <b>O elo.</b> Fecha os itens, grava o {@link ListCheckout} e registra a
+     * despesa -- tudo dentro de uma transacao so (ADR-0031).
+     *
+     * <p>Mora aqui, e nao em <code>conversation</code>, porque atomicidade e
+     * regra de dominio: o REST da Etapa 4 chama este mesmo metodo e herda a
+     * garantia, que e a regra 4 do CLAUDE.md sem esforco extra. O orquestrador
+     * continua sem transacao propria -- segurar conexao de banco durante a
+     * chamada ao LLM e o que a ADR-0005 evita.
+     *
+     * <p>A ordem das escritas nao e arbitraria. <code>finance</code> e chamado
+     * <b>antes</b> de gravar o fechamento porque {@code transaction_id} e
+     * obrigatorio; qualquer falha dele derruba tudo, e o cenario "Falha ao
+     * registrar a despesa nao deixa a lista fechada" exige literalmente que
+     * nenhum item mude de status e nenhuma despesa exista.
+     *
+     * @param itemNames vazio significa "comprei tudo": fecha todos os pendentes.
+     *        Com nomes, fecha so os que casarem pela forma normalizada
+     *        (ADR-0030) -- e o fechamento parcial, que tem cenario proprio
+     */
+    @Transactional
+    @HouseholdScoped
+    public CheckoutResult checkout(UUID householdId,
+                                   UUID memberId,
+                                   List<String> itemNames,
+                                   UUID categoryId,
+                                   long amountCents,
+                                   UUID sourceMessageId) {
+        Optional<ShoppingList> active = lists.findActive();
+        if (active.isEmpty()) {
+            return new CheckoutResult.NoActiveList();
+        }
+
+        ShoppingList list = active.get();
+        List<ListItem> closing = itemNames == null || itemNames.isEmpty()
+                ? items.listPending(list.id)
+                : items.listPendingNamed(list.id, itemNames);
+        if (closing.isEmpty()) {
+            return new CheckoutResult.NothingToClose();
+        }
+
+        // Primeiro o dinheiro: o fechamento precisa do id do lancamento, e se
+        // este passo falhar nada mais chegou a ser escrito.
+        RegisteredExpense expense = finance.registerExpense(householdId, memberId, categoryId,
+                amountCents, null, sourceMessageId);
+
+        ListCheckout checkout = new ListCheckout();
+        checkout.householdId = householdId;
+        checkout.shoppingListId = list.id;
+        checkout.transactionId = expense.transactionId();
+        checkout.itemsPurchasedCount = closing.size();
+        checkout.performedByMemberId = memberId;
+        checkout.performedAt = Instant.now(clock);
+        checkouts.persist(checkout);
+        checkouts.flush();
+
+        Instant purchasedAt = checkout.performedAt;
+        for (ListItem item : closing) {
+            item.status = ListItemStatus.PURCHASED;
+            item.purchasedByMemberId = memberId;
+            item.purchasedAt = purchasedAt;
+            item.listCheckoutId = checkout.id;
+        }
+
+        // Flush dentro do escopo, pelo mesmo motivo de addItems: no commit o
+        // SET LOCAL ROLE ja teria voltado pro papel de fora.
+        items.flush();
+        return new CheckoutResult.Closed(closing.size(),
+                closing.stream().map(item -> item.name).toList(),
+                expense.amountCents(),
+                expense.categoryDisplayName());
     }
 
     /**
