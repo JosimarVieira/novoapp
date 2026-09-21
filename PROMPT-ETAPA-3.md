@@ -16,6 +16,15 @@ Não "conserte" isso. Recolocar o `@Disabled`, afrouxar um cenário ou marcar
 algum como pendente apaga a única coisa que a suíte está sinalizando. O verde
 volta quando a etapa fechar.
 
+**O CI já sabe disso.** `Etapa3AcceptanceTest` leva `@Tag("em-construcao")`, e
+o workflow roda dois passos: o portão (`-DexcludedGroups=em-construcao`, que
+responde "nada regrediu" e libera o `docker build`) e um informativo com
+`continue-on-error` que mostra o placar. Se o portão ficar vermelho, **alguma
+coisa regrediu de verdade** — não é a Etapa 3 aparecendo.
+
+**Tirar a tag é o ritual que fecha a etapa**, e é a última coisa a fazer, não a
+primeira.
+
 ## Leitura obrigatória
 
 1. `CLAUDE.md` inteiro. Em especial a regra 7 (todo lançamento é reversível) e o

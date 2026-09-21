@@ -92,12 +92,30 @@ validação, decide na Etapa 6 ([#4](../DECISOES-ABERTAS.md), escopo LGPD).
 
 ## Onde isso roda
 
-`.github/workflows/ci.yml`, a cada push na `main` e em todo pull request:
-`mvn test` (arquitetura, isolamento de tenant, idempotência, orçamento de
-resposta e os cenários Gherkin) e, se passar, `docker build` da imagem de
-deploy. Existe desde 2026-09-05 — antes disso, "falha o build" e "barra um
-merge" dependiam de alguém lembrar de rodar os testes, que é o tipo de
-disciplina que a [ADR-0003](../01-adr/0003-isolamento-multi-tenant-por-household.md) diz não funcionar.
+`.github/workflows/ci.yml`, a cada push na `main` e em todo pull request.
+Existe desde 2026-09-05 — antes disso, "falha o build" e "barra um merge"
+dependiam de alguém lembrar de rodar os testes, que é o tipo de disciplina que a
+[ADR-0003](../01-adr/0003-isolamento-multi-tenant-por-household.md) diz não
+funcionar.
+
+**São dois passos de teste, e só o primeiro é portão** (desde 2026-09-21):
+
+- `mvn test -DexcludedGroups=em-construcao` — arquitetura, isolamento de tenant,
+  idempotência, orçamento de resposta e os cenários das etapas fechadas. Verde
+  aqui significa **"nada regrediu"**, e é o que libera o `docker build`.
+- `mvn test -Dgroups=em-construcao`, com `continue-on-error` — a suíte da etapa
+  em construção, que nasce vermelha de propósito. Mostra o placar subindo cenário
+  a cenário sem derrubar o job.
+
+A separação saiu do primeiro push da Etapa 3: com a suíte do elo ligada, o job
+inteiro caía e levava junto o `docker build` — que existe justamente por uma
+regressão que já quebrou o deploy duas vezes. É a mesma disciplina que deu runner
+próprio ao `@saneamento` na Etapa 2a: escopo novo não pinta de vermelho o portão
+de uma etapa fechada.
+
+**Tirar `@Tag("em-construcao")` da classe é o ritual que marca a etapa fechada** —
+sem ela, a suíte passa a integrar o portão. A tag não se chama `etapa3` de
+propósito: na Etapa 2b ela muda de classe em vez de acumular uma por etapa.
 
 O `docker build` está no CI por um motivo específico: o build de deploy pula os
 testes, então nada mais garante que o `Dockerfile` compila. Foi a regressão que
