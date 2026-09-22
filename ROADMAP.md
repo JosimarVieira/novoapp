@@ -273,15 +273,27 @@ A ordem:
    tem um leitor natural, e isto é **trabalho inacabado**, que não tem nenhum; e
    a solução não precisou de agendador, porque `InboundDispatcher` já roda cada
    mensagem numa virtual thread própria.
-2. **Etapa 3**, com as decisões #23 (`açúcar 20`) e #25 (remover item) resolvidas
-   **dentro** dela: as duas são o elo chegando cedo, não trabalho paralelo.
-3. **Inverter a autoridade da política de confiança** — guardas determinísticas
-   sobre o payload decidem o que der para decidir, faixa como resíduo. O
+2. ~~**Etapa 3**, com as decisões #23 (`açúcar 20`) e #25 (remover item)
+   resolvidas **dentro** dela.~~ **Feita em 2026-09-21**, com as duas resolvidas
+   por dentro como o plano dizia ([ADR-0038](docs/01-adr/0038-item-com-valor-e-fechamento-parcial.md)
+   e [ADR-0039](docs/01-adr/0039-remover-item-da-lista.md)). Nenhuma das duas
+   custou código de domínio novo no fechamento — `açúcar 20` é `checkout` com um
+   nome na lista, e foi o elo existir que tornou a decisão barata. Era esse o
+   argumento para não resolvê-las antes, e ele se confirmou.
+3. **Inverter a autoridade da política de confiança** — é o próximo. Guardas
+   determinísticas sobre o payload decidem o que der para decidir, faixa como
+   resíduo. O
    diagnóstico está fechado (o `confianca` do modelo aparece anticorrelacionado
    nos casos que importam: 0,3 em `petshop`, `Pet shop 80` e `casa 20`, que
    estavam certos; 0,8 e 0,9 em `mercado`, `açúcar 20` e `remover chocolate`, que
    estavam errados). A ADR fica para **depois** da Etapa 3, para não congelar a
-   lista de guardas antes de `fecharCompra` acrescentar as dele.
+   lista de guardas antes de `fecharCompra` acrescentar as dele. **As dele já
+   existem** (2026-09-21): categoria fora do cardápio derruba o fechamento
+   inteiro ([ADR-0037](docs/01-adr/0037-categoria-da-despesa-do-fechamento.md)),
+   e a guarda do dígito escrito
+   ([ADR-0034](docs/01-adr/0034-valor-so-vale-se-a-pessoa-escreveu-digito.md))
+   passou a valer para as duas tools que lançam dinheiro. A lista está fechada —
+   a ADR pode ser escrita.
 4. **Etapa 2b.**
 5. **Etapa 5**, com gabarito anotado uma vez, sobre um sistema que parou de mudar
    de forma.
@@ -291,36 +303,57 @@ Fica deliberadamente de lado até lá, por não ser caminho crítico do elo: a
 [#24](docs/DECISOES-ABERTAS.md) (consultar categorias pelo chat), o comando
 `usar <família>` e o beco sem saída do `ChooseHousehold`.
 
-## Etapa 3 — O elo (~1 semana)
+## Etapa 3 — O elo (~1 semana) — entregue em 2026-09-21
 
 `fecharCompra` atômico, `list_checkout`, `desfazer` reversível dos dois lados.
 
-Os nove cenários estão escritos e marcados `@etapa3` na linha `Funcionalidade:`
-do [`elo-fechamento-de-compra.feature`](docs/03-specs/features/elo-fechamento-de-compra.feature).
-O `Etapa3AcceptanceTest` existe desde 2026-09-19 e **nasceu desabilitado**, pelo
-mesmo motivo que o da Etapa 2 nasceu: escopo que falta deve ser visível na
-própria suíte, e não só aqui. O `@Disabled` sai no primeiro passo de código da
-etapa, não no último.
+O relato completo — o que foi construído, o que a etapa ensinou, o que ficou de
+fora e as decisões tomadas ao implementar — está em
+[`docs/05-entregas/etapa-3-o-elo.md`](docs/05-entregas/etapa-3-o-elo.md).
 
-Levantamento feito ao criá-lo, antes de qualquer código: dos **42 passos
-distintos** do arquivo, **18 já são atendidos** por `ExpenseByChatSteps` e
-`ShoppingListSteps` — enviar mensagem, assertar despesa registrada, consultar a
-lista, desfazer, reentrega. Os **24 restantes são novos**, e quase todos são
-sobre o que só passa a existir agora: item mudando de status em lote, o
-`list_checkout` ligando os dois lados, fechamento parcial, e a falha atômica. O
-passo `que o registro de despesas está indisponível` é o mais importante dos 24:
-sem ele o cenário de falha não prova a atomicidade da
-[ADR-0031](docs/01-adr/0031-atomicidade-do-fechamento-de-compra.md) — o terceiro
-dos quatro testes obrigatórios da
-[estratégia de testes](docs/04-qualidade/estrategia-de-testes.md), e o único que
-nunca existiu.
+**14 cenários passando**, e não os nove escritos: mais dois abertos dentro da
+etapa pela [ADR-0038](docs/01-adr/0038-item-com-valor-e-fechamento-parcial.md)
+(`açúcar 20`) e três pela
+[ADR-0039](docs/01-adr/0039-remover-item-da-lista.md) (remover item) — as
+decisões abertas #23 e #25, que esta etapa tinha de resolver por dentro e que
+sangravam em produção. Uma terceira ADR,
+[a 0037](docs/01-adr/0037-categoria-da-despesa-do-fechamento.md), decidiu de qual
+categoria sai a despesa do fechamento: era decisão estrutural que nenhuma ADR
+cobria, e sem ela o primeiro cenário não tinha como ser implementado.
 
-Nenhum cenário do elo é destacável para a 2a. Todos passam por `fecharCompra`,
-e o cenário de falha ("nenhum item muda de status, nenhuma despesa é
-registrada") só significa algo se a atomicidade existir.
+O `Etapa3AcceptanceTest` **nasceu desabilitado** em 2026-09-19, pelo mesmo motivo
+que o da Etapa 2 nasceu: escopo que falta deve ser visível na própria suíte, e
+não só aqui. O `@Disabled` saiu no primeiro passo de código, e a tag
+`em-construcao` — que a mantinha fora do portão do CI — saiu ao fechar.
 
-**Entregável**: `comprei tudo, 180` fecha a lista e lança a despesa. É a
-demonstração que vende o produto.
+### O que a etapa ensinou, e que não estava previsto
+
+**O teste obrigatório da atomicidade não provava atomicidade.** O passo
+`que o registro de despesas está indisponível` era, desde 2026-09-19, "o mais
+importante dos 24 novos". Ao escrevê-lo, apareceu o problema: `ShoppingService`
+chamava `finance` **antes** de tocar em qualquer item — o desenho intuitivo, e o
+que o próprio comentário do código defendia —, então não havia nada escrito para
+o `rollback` desfazer. O cenário passava por **ordenação**, e teria passado
+igualmente com a transação removida. A ordem das escritas mudou, e a
+sensibilidade foi verificada invertendo a garantia: com duas transações,
+exatamente um cenário fica vermelho, e é o da atomicidade. Registrado na
+[estratégia de testes](docs/04-qualidade/estrategia-de-testes.md) como o caso a
+citar quando alguém perguntar por que teste verde não basta.
+
+**O conserto quase passou em silêncio.** Com duas escritas em `list_item` na
+mesma transação, a segunda desfazia a primeira — status voltava a `PENDING` com
+o fechamento e o lançamento gravados normalmente. Só apareceu porque os cenários
+do elo conferem o **status** dos itens, e não só o lançamento.
+
+**O cardápio de tools foi de seis para oito**, e não para sete. `fecharCompra`
+estava previsto; `removerItemLista` entrou junto porque a #25 era escopo
+declarado da etapa. O gatilho de revisão do
+[SDD de `nlu`](docs/02-arquitetura/sdd-modulo-nlu.md) já avisava sobre seis, e
+agora quatro das oito falam de item de lista, três delas distinguidas por
+detalhes da frase. É candidato da Etapa 5.
+
+**Entregável, entregue**: `comprei tudo, 180` fecha a lista e lança a despesa. É
+a demonstração que vende o produto.
 
 ## Etapa 2b — Tarefas e agenda (~0,5 semana)
 

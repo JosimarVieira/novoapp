@@ -2,7 +2,7 @@
 tipo: sdd
 modulo: shopping
 status: escrito
-atualizado_em: 2026-09-16
+atualizado_em: 2026-09-21
 adrs:
   - ADR-0003
   - ADR-0004
@@ -11,14 +11,19 @@ adrs:
   - ADR-0030
   - ADR-0031
   - ADR-0032
+  - ADR-0037
+  - ADR-0038
+  - ADR-0039
 ---
 
 # SDD — Módulo `shopping`
 
 ## Responsabilidade
 
-Lista de compras do household: adicionar item, marcar comprado, consultar o que
-falta. Um household tem no máximo uma lista ativa por vez (glossário).
+Lista de compras do household: adicionar item, marcar comprado, **remover**,
+consultar o que falta — e **fechar a compra gerando o lançamento**, que é o elo
+e o diferencial do produto. Um household tem no máximo uma lista ativa por vez
+(glossário).
 
 O lastro é a [ADR-0027](../01-adr/0027-lista-de-compras-unica-e-sob-demanda.md),
 mais o glossário (`ShoppingList`, `ListItem`, `ListCheckout`), o modelo de dados
@@ -34,11 +39,16 @@ quando um SDD não declara em que ADR se apoia.
 
 ## Não faz
 
-- **Não cria lançamento financeiro.** `marcarItemComprado` marca item e nada
-  mais — é o que o cenário "Marcar item específico como comprado" exige
-  literalmente ("nenhum lançamento financeiro é criado"). O elo lista → despesa
-  é `fecharCompra`, Etapa 3, e ele chama `finance` em vez de escrever em
-  `transaction` (`sdd-visao-geral.md`).
+- **Não escreve em `transaction`.** Nem mesmo `fecharCompra`: ele chama
+  `finance.registerExpense`, que é a única porta de entrada do lançamento
+  (`sdd-visao-geral.md`). A aresta `shopping` → `finance` sempre foi permitida e
+  desde a Etapa 3 existe em tempo de execução.
+- **`marcarItemComprado` e `removerItemLista` não mexem em dinheiro.** O
+  primeiro marca item e nada mais — é o que o cenário "Marcar item específico
+  como comprado" exige literalmente ("nenhum lançamento financeiro é criado") —,
+  e o segundo tira da lista o que a família desistiu de comprar
+  ([ADR-0039](../01-adr/0039-remover-item-da-lista.md)). Quem junta os dois
+  domínios é `fecharCompra`, e só ele.
 - **Não pergunta nada.** Quando o item mencionado não está na lista, `shopping`
   devolve "não achei" e é `conversation` quem transforma isso em
   `PendingAction` — mesma divisão que `finance` tem com a criação de categoria
@@ -69,15 +79,20 @@ chegam prontos). Nenhuma chamada.
 
 ```
 shopping/
-  ShoppingService            -- addItems / markPurchased / pendingItems
+  ShoppingService            -- addItems / markPurchased / removeItem /
+                                checkout / reopenCheckout / pendingItems
+  ExpenseReversedListener    -- o outro lado do desfazer (ADR-0032)
   ItemDraft                  -- (name, quantity, unit) -- o que veio da interpretacao
   AddedItem, ListItemView    -- o que conversation precisa pra montar o recibo
   MarkPurchasedResult        -- selado: Purchased | NotOnTheList
+  RemoveItemResult           -- selado: Removed | NotOnTheList
+  CheckoutResult             -- selado: Closed | NoActiveList | NothingToClose
   entity/
     ShoppingList, ShoppingListStatus (ACTIVE|CLOSED)
     ListItem, ListItemStatus (PENDING|PURCHASED|REMOVED)
+    ListCheckout             -- o elo
   repository/
-    ShoppingListRepository, ListItemRepository
+    ShoppingListRepository, ListItemRepository, ListCheckoutRepository
 ```
 
 ## Decisões desta versão
@@ -181,11 +196,11 @@ chat, nunca silêncio (regra do `sdd-visao-geral.md`).
   `estrategia-de-testes.md` para toda tabela de dado de usuário que a etapa
   toca.
 
-## O que a Etapa 3 já tem decidido (2026-09-16)
+## O elo, implementado (2026-09-21)
 
-O elo ainda não está implementado, mas duas decisões que o código dele pressupõe
-já estão fechadas — escritas antes da etapa começar, para que o código não as
-invente:
+As duas decisões abaixo foram escritas em 2026-09-16, **antes** da etapa
+começar, para que o código não as inventasse. O código chegou em 2026-09-21 e
+está descrito depois delas.
 
 - **`fecharCompra` é atômico e mora aqui**
   ([ADR-0031](../01-adr/0031-atomicidade-do-fechamento-de-compra.md)): um método
@@ -244,10 +259,91 @@ elo. A disciplina aqui é humana, e a mitigação é esta seção — se aparece
 segundo `@Observes` de evento de `finance` neste módulo, a fronteira merece
 revisão antes do código.
 
+### Como ficou, ao escrever (2026-09-21)
+
+**A ordem das escritas dentro de `checkout` mudou, e a razão é o teste.** A
+primeira versão chamava `finance` **antes** de tocar em qualquer item, com o
+argumento de que "se ele falhar, nada mais chegou a ser escrito". O argumento é
+verdadeiro e é justamente o problema: com nada escrito antes do passo que falha,
+o cenário `Falha ao registrar a despesa não deixa a lista fechada` passava **por
+ordenação**, não por transação. O terceiro dos quatro testes obrigatórios da
+[estratégia de testes](../04-qualidade/estrategia-de-testes.md) — o que cobre o
+diferencial do produto — não teria exercitado a fronteira da
+[ADR-0031](../01-adr/0031-atomicidade-do-fechamento-de-compra.md) uma vez sequer.
+
+Hoje os itens são marcados e descarregados no banco **antes** de `finance` ser
+chamado, e só o `rollback` os desfaz. Verificado invertendo a garantia: com as
+duas escritas em transações separadas, o cenário fica vermelho. Teste verde que
+não pode ficar vermelho é afirmação, não garantia.
+
+O `list_checkout` continua sendo escrito depois de `finance`, e isso não é
+escolha: `transaction_id` é `NOT NULL`.
+
+**A mudança de ordem cobrou um preço, e ele está no código.** Com o status
+escrito antes e o `list_checkout_id` depois, `list_item` passou a ser escrito
+**duas vezes na mesma transação**. Feita a segunda escrita pelo estado das
+entidades, o Hibernate reemitia a linha inteira com os valores de **antes** do
+primeiro flush: o status voltava a `PENDING` e o `purchased_by_member_id` a
+nulo, enquanto o `list_checkout` e o lançamento ficavam gravados do mesmo jeito.
+Silencioso — o recibo dizia "fechei a compra" e listava os mesmos itens em
+"ainda falta".
+
+O conserto é `ListItemRepository.linkToCheckout`: um `UPDATE` em massa de uma
+coluna só, que não passa pelo estado das entidades. Está comentado lá, porque
+quem mexer nesse método de novo precisa saber por que ele não é um `forEach`.
+
+Só apareceu porque os cenários do elo conferem o **status** dos itens, e não só
+o lançamento. Vale como argumento a favor de cenário que asserta os dois lados
+de uma operação que escreve nos dois.
+
+**A categoria da despesa do fechamento sai do cardápio da família**
+([ADR-0037](../01-adr/0037-categoria-da-despesa-do-fechamento.md)). `checkout`
+recebe `categoryId` pronto e não resolve nome nenhum — quem escolhe entre as
+categorias reais é o modelo, em `nlu`, e categoria não resolvida vira "não
+entendi" em vez de palpite. A negativa disso está declarada e virou a
+[decisão aberta #26](../DECISOES-ABERTAS.md).
+
+**`açúcar 20` é fechamento parcial de um item só**
+([ADR-0038](../01-adr/0038-item-com-valor-e-fechamento-parcial.md)), e não um
+caminho próprio: é `checkout` com um nome na lista. Nada mudou neste módulo por
+causa dela — a decisão vive inteira na descrição das tools de `nlu`, e é por isso
+que ela foi barata.
+
+**Recusa nomeada, nunca exceção.** `CheckoutResult` é selado — `Closed`,
+`NoActiveList`, `NothingToClose` —, mesmo padrão de `MarkPurchasedResult`.
+`conversation` transforma as duas recusas na **mesma** pergunta ("registro só a
+despesa?"), porque do ponto de vista de quem escreveu elas são a mesma situação.
+
+### Remover item (ADR-0039)
+
+`removeItem` marca `REMOVED`, grava `removed_by_member_id` e `removed_at`
+(migration `V8`), e alcança só item `PENDING`. Não apaga a linha, pelo mesmo
+motivo que o estorno não apaga o lançamento.
+
+Item que não está lá devolve `RemoveItemResult.NotOnTheList` e **não vira
+pergunta** — é a diferença deliberada para `markPurchased`, que oferece
+registrar como comprado: comprar algo fora da lista é caso legítimo, remover o
+que não está lá não tem segunda leitura útil.
+
+Não é desfazível pelo chat: não cria lançamento, logo não é alcançável pelo alvo
+da [ADR-0025](../01-adr/0025-desfazer-precedencia-e-escopo.md). O caminho de
+volta é avisar de novo, e ele funciona porque o índice único da
+[ADR-0030](../01-adr/0030-correspondencia-de-nome-por-forma-normalizada.md) só
+abrange `PENDING`.
+
 ## Gatilhos de revisão
 
-- **Etapa 3**: `fecharCompra`, `list_checkout` e a atomicidade lista+lançamento
-  entram aqui. É o módulo que muda mais na etapa seguinte.
+- ~~**Etapa 3**: `fecharCompra`, `list_checkout` e a atomicidade lista+lançamento
+  entram aqui.~~ **Feito em 2026-09-21** — ver a seção acima.
+- **Etapa 5**, cardápio de tools: este módulo é dono de quatro das oito
+  (`adicionarItemLista`, `marcarItemComprado`, `removerItemLista`,
+  `fecharCompra`) e as quatro falam de itens. Se a matriz de confusão mostrar
+  que elas disputam entre si, o gatilho que se aplica é o do
+  [SDD de `nlu`](sdd-modulo-nlu.md) — encolher o cardápio por situação —, e não
+  reescrever descrição pela quarta vez.
+- **[Decisão aberta #26](../DECISOES-ABERTAS.md)**: decidida, `fecharCompra`
+  passa a poder terminar em criação de categoria, e `afterCategoryCreated` em
+  `conversation` deixa de desembocar sempre em despesa.
 - **[Decisão aberta #15](../DECISOES-ABERTAS.md)** (múltiplas listas simultâneas:
   mercado, farmácia, feira): se for decidida, a
   [ADR-0027](../01-adr/0027-lista-de-compras-unica-e-sob-demanda.md) é superada,

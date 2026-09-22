@@ -78,6 +78,20 @@ public class ListItem extends PanacheEntityBase {
     public UUID listCheckoutId;
 
     /**
+     * Quem tirou o item da lista, e quando (ADR-0039).
+     *
+     * <p>Nao vira aviso para quem tinha pedido -- o produto nao tem mensagem
+     * proativa nesta etapa, e cada fio e 1:1 (ADR-0008). A informacao fica aqui
+     * e aparece na tela da Etapa 4; sem estas colunas, a tela nao teria o que
+     * mostrar.
+     */
+    @Column(name = "removed_by_member_id")
+    public UUID removedByMemberId;
+
+    @Column(name = "removed_at")
+    public Instant removedAt;
+
+    /**
      * Mensagem que pediu o item. So o UUID, sem relacao JPA, porque
      * <code>shopping</code> nao pode importar <code>channel</code> -- a
      * integridade fica na FK do banco, igual em <code>transaction</code>.

@@ -23,7 +23,22 @@ Quatro testes que não podem faltar, porque cobrem as regras não negociáveis:
 2. **Idempotência** — entregar o mesmo `provider_message_id` duas vezes produz
    exatamente um efeito. Cobre [ADR-0005](../01-adr/0005-idempotencia-de-mensagens-recebidas.md).
 3. **Atomicidade do fechamento de compra** — falha em `finance` deixa a lista
-   intacta. Cobre o diferencial do produto.
+   intacta. Cobre o diferencial do produto. **Existe desde 2026-09-21**, no
+   cenário `Falha ao registrar a despesa não deixa a lista fechada`
+   ([elo-fechamento-de-compra.feature](../03-specs/features/elo-fechamento-de-compra.feature)),
+   com `finance` indisponível por uma subclasse de teste que participa da
+   transação de verdade.
+
+   Escrevê-lo obrigou a **mudar a ordem das escritas** em `ShoppingService`.
+   Com `finance` sendo chamado antes de qualquer item mudar de status — que era
+   o desenho original, e o intuitivo —, o cenário passava **por ordenação**: não
+   havia nada escrito para o `rollback` desfazer, e o teste não poderia ficar
+   vermelho nem com a transação removida. Hoje os itens são marcados e
+   descarregados no banco antes, e a sensibilidade foi verificada invertendo a
+   garantia (duas transações separadas → cenário vermelho). Ver
+   [sdd-modulo-shopping.md](../02-arquitetura/sdd-modulo-shopping.md).
+
+   **É o caso a citar quando alguém perguntar por que um teste verde não basta.**
 4. **Orçamento de resposta do webhook** — persistência da `InboundMessage` e
    resposta 200 ficam sob 3s mesmo com interpretação e execução acontecendo
    fora do ciclo de request. Cobre a regra não negociável 3 do CLAUDE.md.

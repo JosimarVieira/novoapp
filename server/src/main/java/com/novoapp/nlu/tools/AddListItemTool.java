@@ -43,7 +43,10 @@ public final class AddListItemTool {
                 .description("Adiciona a lista de compras da familia o que a pessoa disse que esta "
                         + "faltando ou que quer comprar: 'acabou o arroz', 'falta arroz', "
                         + "'comprar arroz', 'adicionar arroz na lista'. NAO use quando a pessoa "
-                        + "disser que JA comprou -- 'comprei arroz' e marcarItemComprado.")
+                        + "disser que JA comprou -- 'comprei arroz' e marcarItemComprado. NAO use "
+                        + "quando houver um valor de dinheiro na mensagem: 'acucar 20' e uma compra "
+                        + "ja feita, e vai para fecharCompra -- quem ainda nao comprou nao sabe o "
+                        + "preco.")
                 .parameters(JsonObjectSchema.builder()
                         .addProperty(ITEMS_PARAMETER, JsonArraySchema.builder()
                                 .description("Um item por coisa mencionada.")

@@ -65,6 +65,40 @@ public sealed interface Intent {
     record MarkItemPurchased(String itemName, double confidence) implements Intent {
     }
 
+    /**
+     * <b>O elo</b>: fechar a lista gerando o lancamento (ADR-0031).
+     *
+     * <p>Diferente de {@link MarkItemPurchased} pelo dinheiro, e so por ele --
+     * marcar item nao cria lancamento, fechar cria. Item com valor na mesma
+     * mensagem ("acucar 20") chega aqui como fechamento de um item so
+     * (ADR-0038), e nao como variante propria.
+     *
+     * @param itemNames vazio significa "comprei tudo": fecha todos os pendentes.
+     *        E o mesmo contrato de {@code ShoppingService.checkout}, propagado
+     *        sem traducao no meio
+     * @param categoryId sempre preenchido, e sempre uma categoria que ja existe
+     *        na familia (ADR-0037). Categoria nao resolvida vira
+     *        {@link Unknown} em <code>NluService</code>, nunca um palpite --
+     *        fechar lista nao e onde se batiza categoria nova
+     * @param amountCents nulo quando a pessoa nao disse quanto foi. Vira UMA
+     *        pergunta curta, com o fechamento inteiro guardado na pendencia
+     *        (ADR-0029), nunca valor inventado (ADR-0034)
+     */
+    record ClosePurchase(List<String> itemNames,
+                         UUID categoryId,
+                         String categoryDisplayName,
+                         Long amountCents,
+                         double confidence) implements Intent {
+
+        public boolean hasAmount() {
+            return amountCents != null && amountCents > 0;
+        }
+    }
+
+    /** "remover chocolate" -- a familia desistiu de comprar (ADR-0039). */
+    record RemoveListItem(String itemName, double confidence) implements Intent {
+    }
+
     record QueryList(double confidence) implements Intent {
     }
 

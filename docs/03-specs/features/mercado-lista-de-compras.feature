@@ -75,3 +75,41 @@ Funcionalidade: Lista de compras compartilhada por chat
     Quando o provedor entrega duas vezes a mesma mensagem "acabou o arroz" de "Ana"
     Então o item "Arroz" entra na lista de compras uma única vez
     E "Ana" recebe exatamente um recibo
+
+  # ADR-0039, decisão aberta #25. Estes três cenários são da Etapa 3 e levam tag
+  # própria, embora morem num arquivo @etapa2: cenário novo em arquivo de etapa
+  # fechada herda a tag da Funcionalidade, e sem o @etapa3 aqui eles pintariam
+  # de vermelho o portão da Etapa 2a, que está verde e deve continuar.
+  # `Etapa2AcceptanceTest` exclui @etapa3 pelo mesmo motivo que já excluía
+  # @saneamento.
+  #
+  # Até 2026-09-19 "remover chocolate" voltava do modelo como
+  # marcarItemComprado com confiança 0,9 -- o item pedido para sair da lista
+  # ficava com o status que a Etapa 3 transforma em despesa.
+  @etapa3
+  Cenário: Remover item que a família desistiu de comprar
+    Dado que os itens "Arroz" e "Chocolate" estão pendentes
+    Quando "Bruno" envia "remover chocolate"
+    Então o item "Chocolate" sai da lista de pendentes
+    E o item "Arroz" continua pendente
+    E nenhum item é marcado como comprado
+    E nenhum lançamento financeiro é criado
+    E "Bruno" recebe um recibo confirmando que o item saiu da lista
+
+  @etapa3
+  Cenário: Remover item que não está na lista
+    Dado que apenas o item "Arroz" está pendente
+    Quando "Bruno" envia "remover feijão"
+    Então nenhum item sai da lista
+    E "Bruno" é informado de que "Feijão" não está na lista
+
+  # O item removido não volta por `desfazer` (ADR-0039): não há lançamento, e o
+  # alvo do desfazer é lançamento (ADR-0025). O caminho de volta é avisar de
+  # novo, e ele funciona porque o índice único da ADR-0030 só abrange PENDING.
+  @etapa3
+  Cenário: Item removido pode ser pedido de novo
+    Dado que os itens "Arroz" e "Chocolate" estão pendentes
+    E que "Bruno" removeu o item "Chocolate" da lista
+    Quando "Ana" envia "acabou o chocolate"
+    Então a lista continua com um único item "Chocolate" pendente
+    E "Ana" recebe um recibo confirmando o item "Chocolate"

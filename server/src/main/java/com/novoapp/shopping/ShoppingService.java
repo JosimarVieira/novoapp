@@ -159,11 +159,28 @@ public class ShoppingService {
      * continua sem transacao propria -- segurar conexao de banco durante a
      * chamada ao LLM e o que a ADR-0005 evita.
      *
-     * <p>A ordem das escritas nao e arbitraria. <code>finance</code> e chamado
-     * <b>antes</b> de gravar o fechamento porque {@code transaction_id} e
-     * obrigatorio; qualquer falha dele derruba tudo, e o cenario "Falha ao
-     * registrar a despesa nao deixa a lista fechada" exige literalmente que
-     * nenhum item mude de status e nenhuma despesa exista.
+     * <p><b>A ordem das escritas nao e arbitraria, e mudou em 2026-09-21 ao
+     * escrever o teste da falha.</b> Os itens sao marcados e descarregados no
+     * banco <b>antes</b> de <code>finance</code> ser chamado. Parece o contrario
+     * do intuitivo -- e era: a primeira versao chamava <code>finance</code>
+     * primeiro, "porque se ele falhar nada mais chegou a ser escrito".
+     *
+     * <p>Isso fazia o cenario "Falha ao registrar a despesa nao deixa a lista
+     * fechada" passar <b>por ordenacao</b>, e nao por transacao. Com nada escrito
+     * antes do passo que falha, "nenhum item muda de status" e verdade
+     * trivialmente, e o teste que a estrategia-de-testes.md chama de terceiro
+     * obrigatorio -- o que cobre o diferencial do produto -- nao teria exercitado
+     * a fronteira transacional da ADR-0031 uma vez sequer. Teste verde que nao
+     * poderia ficar vermelho nao e garantia, e afirmacao.
+     *
+     * <p>Com esta ordem, a falha de <code>finance</code> acontece com os
+     * <code>UPDATE</code> dos itens ja enviados ao banco, e so o
+     * <code>rollback</code> os desfaz. O cenario passa a poder falhar -- e e por
+     * isso que ele passar significa alguma coisa.
+     *
+     * <p>O {@link ListCheckout} continua depois de <code>finance</code>, e nao
+     * por escolha: {@code transaction_id} e {@code NOT NULL}, entao a linha nao
+     * existe antes de o lancamento existir.
      *
      * @param itemNames vazio significa "comprei tudo": fecha todos os pendentes.
      *        Com nomes, fecha so os que casarem pela forma normalizada
@@ -190,8 +207,17 @@ public class ShoppingService {
             return new CheckoutResult.NothingToClose();
         }
 
-        // Primeiro o dinheiro: o fechamento precisa do id do lancamento, e se
-        // este passo falhar nada mais chegou a ser escrito.
+        // Primeiro a lista, e descarregada no banco agora. Ver o javadoc: e o
+        // que faz a falha de finance ter algo a desfazer, e portanto o que faz o
+        // cenario da atomicidade poder ficar vermelho.
+        Instant purchasedAt = Instant.now(clock);
+        for (ListItem item : closing) {
+            item.status = ListItemStatus.PURCHASED;
+            item.purchasedByMemberId = memberId;
+            item.purchasedAt = purchasedAt;
+        }
+        items.flush();
+
         RegisteredExpense expense = finance.registerExpense(householdId, memberId, categoryId,
                 amountCents, null, sourceMessageId);
 
@@ -201,25 +227,120 @@ public class ShoppingService {
         checkout.transactionId = expense.transactionId();
         checkout.itemsPurchasedCount = closing.size();
         checkout.performedByMemberId = memberId;
-        checkout.performedAt = Instant.now(clock);
+        checkout.performedAt = purchasedAt;
         checkouts.persist(checkout);
         checkouts.flush();
 
-        Instant purchasedAt = checkout.performedAt;
-        for (ListItem item : closing) {
-            item.status = ListItemStatus.PURCHASED;
-            item.purchasedByMemberId = memberId;
-            item.purchasedAt = purchasedAt;
-            item.listCheckoutId = checkout.id;
-        }
-
-        // Flush dentro do escopo, pelo mesmo motivo de addItems: no commit o
-        // SET LOCAL ROLE ja teria voltado pro papel de fora.
-        items.flush();
+        // O vinculo so pode ser escrito depois de o fechamento ter id, e vai por
+        // UPDATE em massa: ver o porque em ListItemRepository.linkToCheckout --
+        // a segunda escrita pelo estado das entidades desfazia a primeira.
+        items.linkToCheckout(closing.stream().map(item -> item.id).toList(), checkout.id);
         return new CheckoutResult.Closed(closing.size(),
                 closing.stream().map(item -> item.name).toList(),
                 expense.amountCents(),
                 expense.categoryDisplayName());
+    }
+
+    /**
+     * Tira da lista o item que a familia desistiu de comprar (ADR-0039).
+     *
+     * <p>Marca <code>REMOVED</code> em vez de apagar a linha, pelo mesmo motivo
+     * que o estorno nao apaga o lancamento: em lista compartilhada, "sumiu" e
+     * pior que "foi removido" (modelo-de-dados.md). O status existia desde a
+     * Etapa 2a sem uso -- e este o uso.
+     *
+     * <p>So alcanca item <code>PENDING</code>. Remover algo ja comprado seria
+     * desfazer uma compra, e isso e {@code desfazer} do fechamento (ADR-0032),
+     * nao remocao.
+     */
+    @Transactional
+    @HouseholdScoped
+    public RemoveItemResult removeItem(UUID householdId, UUID memberId, String itemName) {
+        Optional<ShoppingList> list = lists.findActive();
+        if (list.isEmpty()) {
+            return new RemoveItemResult.NotOnTheList(itemName);
+        }
+
+        Optional<ListItem> found = items.findPendingByName(list.get().id, itemName);
+        if (found.isEmpty()) {
+            return new RemoveItemResult.NotOnTheList(itemName);
+        }
+
+        ListItem item = found.get();
+        item.status = ListItemStatus.REMOVED;
+        item.removedByMemberId = memberId;
+        item.removedAt = Instant.now(clock);
+        items.flush();
+        return new RemoveItemResult.Removed(item.name);
+    }
+
+    /**
+     * O outro lado do <code>desfazer</code> (ADR-0032): os itens daquele
+     * fechamento voltam a <code>PENDING</code>.
+     *
+     * <p>Chamado pelo observador de {@code ExpenseReversed}, dentro da transacao
+     * de <code>finance</code> -- e por isso nao tem {@code @Transactional}
+     * proprio nem {@code @HouseholdScoped}: abrir escopo aqui esconderia que a
+     * atomicidade e a mesma da ADR-0031, no sentido inverso.
+     *
+     * <p><b>O fechamento e a unidade</b>: volta o que aquele fechamento fechou,
+     * e nao a lista inteira -- fechamento parcial tem cenario proprio.
+     *
+     * <p>Item que colidiria com um pendente de mesmo nome normalizado permanece
+     * <code>PURCHASED</code> (ADR-0030, ADR-0032). Nao e perda: quem avisou de
+     * novo ja alcancou o efeito que o desfazer queria.
+     *
+     * @return os nomes que de fato voltaram a lista, na ordem em que foram
+     *         pedidos. O observador do evento descarta isto -- quem monta o
+     *         recibo le depois, por {@link #reopenedItemsOf}, ja fora da
+     *         transacao. O retorno fica porque o REST da Etapa 4 chama este
+     *         metodo direto, sem evento no meio
+     */
+    public List<String> reopenCheckout(UUID transactionId) {
+        Optional<ListCheckout> checkout = checkouts.findByTransaction(transactionId);
+        if (checkout.isEmpty()) {
+            // Lancamento avulso: o caso comum. Nao veio de fechamento nenhum, e
+            // o estorno dele nao mexe em lista nenhuma.
+            return List.of();
+        }
+
+        List<String> reopened = new ArrayList<>();
+        for (ListItem item : items.listPurchasedByCheckout(checkout.get().id)) {
+            if (items.hasOtherPendingWithSameName(item.shoppingListId, item.nameNormalized, item.id)) {
+                continue;
+            }
+            item.status = ListItemStatus.PENDING;
+            // O item voltou a ser algo que falta. Quem o tinha comprado esta no
+            // historico do lancamento estornado (ADR-0032).
+            item.purchasedByMemberId = null;
+            item.purchasedAt = null;
+            reopened.add(item.name);
+        }
+        items.flush();
+        return List.copyOf(reopened);
+    }
+
+    /**
+     * O que voltou para a lista no estorno daquele lancamento -- leitura, para o
+     * recibo.
+     *
+     * <p>Existe porque o caminho da escrita e um evento CDI e o retorno dele se
+     * perde no observador. Ler depois e barato e nao reintroduz segunda
+     * transacao de <b>escrita</b>, que e o que a ADR-0031 evita: o efeito ja
+     * commitou inteiro quando esta consulta roda.
+     *
+     * <p>Sem isto o recibo diria so "estornei" enquanto tres itens voltaram para
+     * a lista em silencio -- e a ADR-0032 pede "um desfazer, um recibo, os dois
+     * lados".
+     */
+    @Transactional
+    @HouseholdScoped
+    public List<String> reopenedItemsOf(UUID householdId, UUID transactionId) {
+        return checkouts.findByTransaction(transactionId)
+                .map(checkout -> items.listPendingByCheckout(checkout.id).stream()
+                        .map(item -> item.name)
+                        .toList())
+                .orElseGet(List::of);
     }
 
     /**

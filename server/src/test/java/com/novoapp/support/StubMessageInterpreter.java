@@ -5,11 +5,13 @@ import com.novoapp.nlu.spi.InterpretationRequest;
 import com.novoapp.nlu.spi.MessageInterpreter;
 import com.novoapp.nlu.spi.ToolCall;
 import com.novoapp.nlu.tools.AddListItemTool;
+import com.novoapp.nlu.tools.ClosePurchaseTool;
 import com.novoapp.nlu.tools.ConfirmSuggestedCategoryTool;
 import com.novoapp.nlu.tools.InviteMemberTool;
 import com.novoapp.nlu.tools.MarkItemPurchasedTool;
 import com.novoapp.nlu.tools.QueryListTool;
 import com.novoapp.nlu.tools.RegisterExpenseTool;
+import com.novoapp.nlu.tools.RemoveListItemTool;
 import io.quarkus.test.Mock;
 import jakarta.enterprise.context.ApplicationScoped;
 
@@ -96,6 +98,11 @@ public class StubMessageInterpreter implements MessageInterpreter {
                     "precisa de ", "precisamos de ", "falta o ", "falta a ", "falta ", "comprar ");
     private static final List<String> PURCHASED_PREFIXES =
             List.of("comprei o ", "comprei a ", "comprei os ", "comprei as ", "comprei ");
+    private static final List<String> REMOVE_PREFIXES =
+            List.of("remover ", "remove ", "remova ", "retirar ", "tirar ", "apagar ");
+    /** O que a pessoa escreve quando comprou a lista toda: fechamento sem itens nomeados. */
+    private static final List<String> EVERYTHING =
+            List.of("tudo", "tudo da lista", "a lista", "a lista toda", "toda a lista", "tudo o que tinha");
     private static final List<String> ARTICLES = List.of("o ", "a ", "os ", "as ", "um ", "uma ", "de ");
     /** Nao sobrevivem a extracao da descricao: nao dizem nada sobre o gasto. */
     private static final List<String> STOPWORDS =
@@ -138,6 +145,25 @@ public class StubMessageInterpreter implements MessageInterpreter {
                     RegisterExpenseTool.CATEGORY_PARAMETER, "Mercado",
                     RegisterExpenseTool.AMOUNT_PARAMETER, new BigDecimal("50"),
                     RegisterExpenseTool.CONFIDENCE_PARAMETER, CERTAIN));
+
+    /**
+     * Item com valor na mesma mensagem (ADR-0038), como {@link #FIXED_EXPENSES}:
+     * a regra burra nao da conta, entao entra como Intent fixa.
+     *
+     * <p>O que ela nao consegue e distinguir "nome de produto + valor" de
+     * "categoria + valor" sem julgamento -- "acucar 20" e "pet shop 80" tem
+     * exatamente a mesma forma, e so a primeira e um fechamento. Em producao
+     * quem decide e o modelo, com a lista de itens pendentes e a de categorias
+     * no contexto; aqui, decidir por regra seria escrever um parser escondido.
+     *
+     * <p>Vale nos dois cenarios da mensagem -- com "Acucar" pendente e sem --,
+     * e e de proposito: a diferenca entre fechar e perguntar e de
+     * <code>shopping</code>, nao da interpretacao. O stub devolvendo a mesma
+     * coisa nas duas e o que faz o cenario "Fechar item que nao esta na lista"
+     * provar alguma coisa.
+     */
+    private static final Map<String, List<String>> FIXED_CHECKOUT_ITEMS = Map.of(
+            "acucar 20", List.of("Açúcar"));
 
     /**
      * Latencia artificial. Chamada de LLM tem cauda imprevisivel (ADR-0005), e o
@@ -224,15 +250,31 @@ public class StubMessageInterpreter implements MessageInterpreter {
             return Optional.of(new ToolCall(QueryListTool.NAME,
                     Map.of(QueryListTool.CONFIDENCE_PARAMETER, CERTAIN)));
         }
+        // Antes de marcarItemComprado de proposito: ate a ADR-0039 nao havia
+        // ferramenta de remover, e "remover chocolate" caia justamente ali --
+        // com confianca 0,9, escrevendo o status que a Etapa 3 transforma em
+        // despesa.
+        String removed = stripPrefix(original, normalized, REMOVE_PREFIXES);
+        if (removed != null) {
+            return Optional.of(new ToolCall(RemoveListItemTool.NAME, Map.of(
+                    RemoveListItemTool.ITEM_PARAMETER, titleCase(stripArticle(removed)),
+                    RemoveListItemTool.CONFIDENCE_PARAMETER, CERTAIN)));
+        }
         String purchased = stripPrefix(original, normalized, PURCHASED_PREFIXES);
         if (purchased != null) {
-            return Optional.of(new ToolCall(MarkItemPurchasedTool.NAME, Map.of(
-                    MarkItemPurchasedTool.ITEM_PARAMETER, titleCase(stripArticle(purchased)),
-                    MarkItemPurchasedTool.CONFIDENCE_PARAMETER, CERTAIN)));
+            return purchasedOrCheckout(purchased, request.expenseCategories());
         }
         String listed = stripPrefix(original, normalized, ADD_ITEM_PREFIXES);
         if (listed != null) {
             return addListItems(listed);
+        }
+        List<String> fixedCheckout = FIXED_CHECKOUT_ITEMS.get(normalized);
+        if (fixedCheckout != null) {
+            Matcher amount = AMOUNT.matcher(normalized);
+            return amount.find()
+                    ? checkout(fixedCheckout, new BigDecimal(amount.group(1).replace(',', '.')),
+                            request.expenseCategories())
+                    : Optional.empty();
         }
 
         return expense(original, normalized, request.expenseCategories());
@@ -324,6 +366,72 @@ public class StubMessageInterpreter implements MessageInterpreter {
         }
         arguments.put(ConfirmSuggestedCategoryTool.CONFIDENCE_PARAMETER, CERTAIN);
         return Optional.of(new ToolCall(ConfirmSuggestedCategoryTool.NAME, arguments));
+    }
+
+    /**
+     * O que vem depois de "comprei": marcar, ou fechar a compra.
+     *
+     * <p><b>O valor e o que separa os dois</b> (ADR-0031): "comprei o arroz" e
+     * marcarItemComprado e nao mexe em dinheiro; "comprei o arroz, 20" e
+     * fecharCompra e mexe nos dois lados. "comprei tudo" sem valor tambem e
+     * fechamento -- so que sem quanto, e o bot pergunta.
+     */
+    private Optional<ToolCall> purchasedOrCheckout(String purchased, List<String> categoryNames) {
+        Matcher amount = AMOUNT.matcher(normalize(purchased));
+        BigDecimal amountInReais = amount.find()
+                ? new BigDecimal(amount.group(1).replace(',', '.'))
+                : null;
+
+        String named = amountInReais == null
+                ? purchased
+                : purchased.substring(0, purchased.indexOf(amount.group(1))).trim();
+        named = named.replaceAll("[,;:]\\s*$", "").trim();
+
+        List<String> items = EVERYTHING.contains(normalize(named)) || named.isBlank()
+                ? List.of()
+                : java.util.Arrays.stream(named.split(",| e "))
+                        .map(part -> titleCase(stripArticle(part.trim())))
+                        .filter(part -> !part.isBlank())
+                        .toList();
+
+        if (amountInReais == null && !items.isEmpty()) {
+            // Sem valor e com item nomeado: continua sendo so baixar o item.
+            return Optional.of(new ToolCall(MarkItemPurchasedTool.NAME, Map.of(
+                    MarkItemPurchasedTool.ITEM_PARAMETER, items.get(0),
+                    MarkItemPurchasedTool.CONFIDENCE_PARAMETER, CERTAIN)));
+        }
+        return checkout(items, amountInReais, categoryNames);
+    }
+
+    private Optional<ToolCall> checkout(List<String> items, BigDecimal amountInReais,
+                                        List<String> categoryNames) {
+        Optional<String> category = groceryCategory(categoryNames);
+        if (category.isEmpty()) {
+            // ADR-0037: sem categoria que ja exista, nao ha fechamento. E o que
+            // NluService transforma em "nao entendi".
+            return Optional.empty();
+        }
+
+        Map<String, Object> arguments = new LinkedHashMap<>();
+        arguments.put(ClosePurchaseTool.ITEMS_PARAMETER, items);
+        arguments.put(ClosePurchaseTool.CATEGORY_PARAMETER, category.get());
+        if (amountInReais != null) {
+            arguments.put(ClosePurchaseTool.AMOUNT_PARAMETER, amountInReais);
+        }
+        arguments.put(ClosePurchaseTool.CONFIDENCE_PARAMETER, CERTAIN);
+        return Optional.of(new ToolCall(ClosePurchaseTool.NAME, arguments));
+    }
+
+    /**
+     * Onde a compra de mercado cai (ADR-0037). Em producao quem escolhe e o
+     * modelo, entre as categorias reais da familia; aqui a regra e a mais burra
+     * que serve: a que se chama "mercado", ou a primeira que houver.
+     */
+    private Optional<String> groceryCategory(List<String> categoryNames) {
+        return categoryNames.stream()
+                .filter(name -> normalize(name).startsWith("mercado"))
+                .findFirst()
+                .or(() -> categoryNames.stream().findFirst());
     }
 
     private Optional<ToolCall> addListItems(String listed) {

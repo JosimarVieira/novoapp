@@ -28,6 +28,7 @@ public class ShoppingListSteps {
 
     private static final String PENDING = "PENDING";
     private static final String PURCHASED = "PURCHASED";
+    private static final String REMOVED = "REMOVED";
 
     @Inject
     AcceptanceWorld world;
@@ -74,6 +75,17 @@ public class ShoppingListSteps {
     public void itemsPending(String first, String second) {
         itemAlreadyPending(first);
         itemAlreadyPending(second);
+    }
+
+    /**
+     * A remocao anterior vem pelo proprio fluxo, e nao por <code>UPDATE</code>:
+     * o cenario "Item removido pode ser pedido de novo" so significa alguma
+     * coisa sobre um item que o codigo de verdade removeu (ADR-0039).
+     */
+    @E("^que \"([^\"]*)\" removeu o item \"([^\"]*)\" da lista$")
+    public void memberRemovedItem(String actor, String itemName) {
+        world.send(actor, "remover " + itemName.toLowerCase(Locale.ROOT));
+        assertThat(statusOf(itemName)).isEqualTo(REMOVED);
     }
 
     @E("^que o item \"([^\"]*)\" já foi marcado como comprado$")
@@ -172,8 +184,55 @@ public class ShoppingListSteps {
     }
 
     // ------------------------------------------------------------------
+    // Remocao (ADR-0039)
+    // ------------------------------------------------------------------
+
+    @Entao("^o item \"([^\"]*)\" sai da lista de pendentes$")
+    public void itemLeftThePendingList(String itemName) {
+        // REMOVED, e nao apagado: em lista compartilhada "sumiu" e pior que "foi
+        // removido" (ADR-0039). A linha continua la, e e isso que a tela da
+        // Etapa 4 vai mostrar.
+        List<List<Object>> rows = fixtures.query(
+                "SELECT status, removed_by_member_id, removed_at FROM list_item WHERE lower(name) = ?",
+                lower(itemName));
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0).get(0)).isEqualTo(REMOVED);
+        assertThat(rows.get(0).get(1)).isNotNull();
+        assertThat(rows.get(0).get(2)).isNotNull();
+    }
+
+    @Entao("^nenhum item sai da lista$")
+    public void noItemLeftTheList() {
+        assertThat(fixtures.count("SELECT count(*) FROM list_item WHERE status = ?", REMOVED)).isZero();
+    }
+
+    @E("^\"([^\"]*)\" é informado de que \"([^\"]*)\" não está na lista$")
+    public void informedItemIsNotOnTheList(String actor, String itemName) {
+        String reply = world.lastReplyTo(actor);
+        assertThat(reply).contains(itemName);
+        assertThat(fold(reply)).contains("nao esta na lista");
+        // ADR-0039: remover o que nao esta la nao vira pergunta -- nao ha o que
+        // oferecer. E a diferenca deliberada para "comprei o feijao", que oferece.
+        assertThat(fixtures.count("SELECT count(*) FROM pending_action")).isZero();
+    }
+
+    @E("^\"([^\"]*)\" recebe um recibo confirmando que o item saiu da lista$")
+    public void receivesRemovalReceipt(String actor) {
+        List<List<Object>> rows = fixtures.query(
+                "SELECT name FROM list_item WHERE status = ?", REMOVED);
+        assertThat(rows).hasSize(1);
+        assertThat(world.lastReplyTo(actor)).contains(String.valueOf(rows.get(0).get(0)));
+        assertThat(fold(world.lastReplyTo(actor))).contains("tirei da lista");
+    }
+
+    // ------------------------------------------------------------------
     // Respostas
     // ------------------------------------------------------------------
+
+    @E("^\"([^\"]*)\" recebe um recibo confirmando o item \"([^\"]*)\"$")
+    public void receivesItemReceiptNamed(String actor, String itemName) {
+        assertThat(world.lastReplyTo(actor)).contains(itemName);
+    }
 
     @E("^\"([^\"]*)\" recebe um recibo confirmando o item$")
     public void receivesItemReceipt(String actor) {

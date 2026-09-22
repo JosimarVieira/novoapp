@@ -69,6 +69,27 @@ public record ToolCall(String toolName, Map<String, Object> arguments) {
         };
     }
 
+    /**
+     * Um array de texto simples -- os itens que <code>fecharCompra</code> diz
+     * terem sido comprados.
+     *
+     * <p>Ausente e vazio sao a mesma coisa aqui, e isso e contrato e nao
+     * descuido: em <code>fecharCompra</code> lista vazia significa "comprei
+     * tudo" (ADR-0031), e um modelo que omite o parametro quis dizer exatamente
+     * isso.
+     */
+    public java.util.List<String> strings(String parameter) {
+        Object value = arguments.get(parameter);
+        if (value instanceof java.util.List<?> list) {
+            return list.stream()
+                    .filter(java.util.Objects::nonNull)
+                    .map(item -> String.valueOf(item).trim())
+                    .filter(item -> !item.isEmpty())
+                    .toList();
+        }
+        return java.util.List.of();
+    }
+
     @SuppressWarnings("unchecked")
     public java.util.List<Map<String, Object>> objects(String parameter) {
         Object value = arguments.get(parameter);

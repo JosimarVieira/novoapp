@@ -7,11 +7,13 @@ import com.novoapp.nlu.spi.InterpretationRequest;
 import com.novoapp.nlu.spi.MessageInterpreter;
 import com.novoapp.nlu.spi.ToolCall;
 import com.novoapp.nlu.tools.AddListItemTool;
+import com.novoapp.nlu.tools.ClosePurchaseTool;
 import com.novoapp.nlu.tools.ConfirmSuggestedCategoryTool;
 import com.novoapp.nlu.tools.InviteMemberTool;
 import com.novoapp.nlu.tools.MarkItemPurchasedTool;
 import com.novoapp.nlu.tools.QueryListTool;
 import com.novoapp.nlu.tools.RegisterExpenseTool;
+import com.novoapp.nlu.tools.RemoveListItemTool;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.SystemMessage;
@@ -59,7 +61,15 @@ public class MistralMessageInterpreter implements MessageInterpreter {
               arroz na lista", "poe arroz na lista" -- vai para adicionarItemLista;
             - fato, no passado -- "comprei arroz", "ja comprei o arroz", "peguei o arroz",
               "trouxe o arroz" -- vai para marcarItemComprado, mesmo que o item esteja entre os
-              itens pendentes do contexto. Estar na lista e justamente o normal nesse caso.
+              itens pendentes do contexto. Estar na lista e justamente o normal nesse caso;
+            - fato, no passado, E com valor de dinheiro na mensagem -- "comprei tudo, 180",
+              "comprei o arroz e o leite, 60", "fechei a lista, 180", "acucar 20" -- vai para
+              fecharCompra, que marca os itens E lanca a despesa numa operacao so. O valor e o
+              que separa fecharCompra de marcarItemComprado: quem ainda nao comprou nao sabe o
+              preco;
+            - desistencia -- "remover chocolate", "tirar o feijao da lista", "nao precisa mais
+              do cafe" -- vai para removerItemLista. Quem desistiu de comprar nao comprou:
+              nunca use marcarItemComprado para isso.
             Valor de dinheiro vai em reais, exatamente como a pessoa escreveu: em "farmacia 32" o
             valor e 32. Nunca multiplique e nunca converta para centavos -- quem faz essa conta e o
             sistema.
@@ -166,6 +176,8 @@ public class MistralMessageInterpreter implements MessageInterpreter {
                 RegisterExpenseTool.specification(request.expenseCategories()),
                 AddListItemTool.specification(),
                 MarkItemPurchasedTool.specification(),
+                ClosePurchaseTool.specification(request.expenseCategories()),
+                RemoveListItemTool.specification(),
                 QueryListTool.specification(),
                 InviteMemberTool.specification()));
         if (request.categoryCorrectionOffered()) {
@@ -337,8 +349,16 @@ public class MistralMessageInterpreter implements MessageInterpreter {
 
     /**
      * A impressao digital da parte <b>estatica</b> do que este adaptador manda
-     * ao modelo (ADR-0035): os tres textos de prompt, as seis tools, e o nome e
-     * a descricao de cada parametro delas.
+     * ao modelo (ADR-0035): os tres textos de prompt, <b>todas</b> as tools, e o
+     * nome e a descricao de cada parametro delas.
+     *
+     * <p>"Todas" e literal, e e a armadilha desta classe. Tool nova que nao
+     * entre na lista abaixo nao quebra nada: o hash continua sendo calculado,
+     * continua estavel, e {@code InterpretationFingerprintTest} continua verde
+     * -- ele testa estabilidade e formato, nao cobertura. O que some, em
+     * silencio, e exatamente o que este hash existe para detectar: mudanca na
+     * descricao de um parametro daquela tool. Eram seis na Etapa 2a; a Etapa 3
+     * acrescentou {@code fecharCompra} e {@code removerItemLista}.
      *
      * <p>Fica de fora, de proposito, tudo que muda por mensagem -- categorias e
      * itens do household, pergunta pendente. Aquilo e contexto, nao versao: se
@@ -374,6 +394,8 @@ public class MistralMessageInterpreter implements MessageInterpreter {
                 RegisterExpenseTool.specification(List.of(FINGERPRINT_CATEGORY)),
                 AddListItemTool.specification(),
                 MarkItemPurchasedTool.specification(),
+                ClosePurchaseTool.specification(List.of(FINGERPRINT_CATEGORY)),
+                RemoveListItemTool.specification(),
                 QueryListTool.specification(),
                 InviteMemberTool.specification(),
                 ConfirmSuggestedCategoryTool.specification())) {
