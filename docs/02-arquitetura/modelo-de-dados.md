@@ -465,6 +465,7 @@ list_item
   unit,
   status (PENDING|PURCHASED|REMOVED),
   requested_by_member_id, purchased_by_member_id, purchased_at,
+  removed_by_member_id, removed_at, -- ADR-0039: remocao marca, nao apaga
   source_message_id                 -- rastreia o item ate a mensagem que o pediu
 
 list_checkout                     -- o elo
@@ -484,6 +485,22 @@ passou por fechamento nenhum e por isso não é desfazível pelo chat.
 `list_checkout` materializa o diferencial do produto: liga o fechamento da
 lista ao lançamento financeiro. Ter tabela própria (em vez de só uma FK em
 `transaction`) permite fechar parcialmente a lista mais de uma vez.
+
+`removed_by_member_id` e `removed_at` entraram na `V8`, com a
+[ADR-0039](../01-adr/0039-remover-item-da-lista.md). `status = 'REMOVED'` existia
+desde a `V3` e nunca tinha sido escrito — não havia ferramenta de remover, e
+`remover chocolate` voltava do modelo como `marcarItemComprado`, gravando o
+status que o elo transforma em despesa. A remoção **marca**, não apaga, pelo
+mesmo motivo que o estorno não apaga o lançamento. As duas colunas são o "por
+quem" e o "quando" que o status sozinho não guarda: ninguém é avisado pelo chat,
+e é a tela da Etapa 4 que mostra isso.
+
+O vínculo `list_item.list_checkout_id` **sobrevive ao estorno**, de propósito. O
+`desfazer` devolve o item a `PENDING` e limpa `purchased_by_member_id` (a
+[ADR-0032](../01-adr/0032-desfazer-alcanca-o-fechamento-inteiro.md) decide que o
+item "voltou a ser algo que falta"), mas mantém de qual fechamento ele veio — é a
+procedência do item, e é o que permite ao recibo do `desfazer` nomear o que
+voltou para a lista em vez de reabrir três itens em silêncio.
 
 ## Tarefas (esboço)
 

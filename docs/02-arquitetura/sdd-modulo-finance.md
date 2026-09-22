@@ -182,8 +182,39 @@ que o `sdd-visao-geral.md` trava, sem abrir mão da transação única.
 `finance` continua sem saber que `list_checkout` existe. O que ele afirma é só o
 fato do seu próprio domínio: um lançamento foi estornado.
 
+## `ExpenseReversed`: o anúncio do estorno (2026-09-21)
+
+`reverseLatest` publica um evento CDI `ExpenseReversed` **dentro da própria
+transação**, e `shopping` observa para devolver a `PENDING` os itens daquele
+fechamento ([ADR-0032](../01-adr/0032-desfazer-alcanca-o-fechamento-inteiro.md)).
+
+A ADR-0032 deixou explicitamente para a Etapa 3 decidir **onde** o método fica.
+A regra de dependência eliminou metade sozinha: `finance` não pode importar
+`shopping`, então `reverseLatest` não tem como consultar `list_checkout`. É o
+mesmo padrão de `HouseholdCreated` → conta `WALLET`, que existe desde a Etapa 1
+exatamente para não inverter a direção.
+
+**Este módulo não sabe que fechamento de compra existe, e é assim que tem de
+continuar.** Ele anuncia que estornou; quem decide se há lista a mexer é o
+observador do outro lado. Lançamento avulso — o caso comum — publica igual, e o
+observador não acha `list_checkout` nenhum e não faz nada.
+
+Síncrono, na mesma transação: se o observador falhar, o estorno cai junto. Não
+contraria a alternativa D da
+[ADR-0031](../01-adr/0031-atomicidade-do-fechamento-de-compra.md), que descartou
+evento **assíncrono** — a objeção dela era literalmente que a lista mudaria
+primeiro.
+
+O risco desta escolha está declarado no
+[SDD de `shopping`](sdd-modulo-shopping.md): observador de evento não é um
+`import`, então o ArchUnit não vê o acoplamento. A disciplina é humana.
+
 ## Gatilhos de revisão
 
+- **Um segundo evento publicado por `finance` e observado por `shopping`** pede
+  revisão de fronteira antes do código. Um é a direção de dependência resolvida;
+  dois começam a ser `shopping` reagindo a `finance` de modo geral, e nenhuma
+  regra de arquitetura pega isso.
 - **Edição de campo com histórico** ([ADR-0012](../01-adr/0012-edicao-de-lancamento-entre-membros.md),
   tabela `transaction_edit`) continua fora: a Etapa 2a implementou o estorno, que
   é o outro mecanismo da mesma ADR, mas nenhum cenário desta etapa corrige valor

@@ -36,12 +36,16 @@ jobs:
       # O runner do Ubuntu ja tem Docker, que os Testcontainers exigem: os
       # testes de RLS precisam de Postgres real, nunca H2.
       #
-      # ESTE e o portao: tudo menos a etapa em construcao. Verde aqui significa
-      # "nada regrediu", que e a pergunta que o CI precisa responder todo dia.
+      # ESTE e o portao. Verde aqui significa "nada regrediu", que e a pergunta
+      # que o CI precisa responder todo dia.
       #
-      # A suite da etapa em construcao nasce vermelha de proposito -- escopo que
-      # falta tem de ser visivel na propria suite, e o placar sobe cenario a
-      # cenario. Ate 2026-09-21 ela derrubava o job inteiro, com duas
+      # `-DexcludedGroups=em-construcao` fica, embora hoje nenhuma classe leve a
+      # tag: a Etapa 3 fechou em 2026-09-21 e a tag dela saiu. A exclusao existe
+      # para a proxima etapa -- a suite da etapa em construcao nasce vermelha de
+      # proposito, porque escopo que falta tem de ser visivel na propria suite, e
+      # o placar sobe cenario a cenario.
+      #
+      # Ate 2026-09-21 essa suite derrubava o job inteiro, com duas
       # consequencias que ninguem tinha escolhido: o `docker build` abaixo
       # deixava de rodar durante a etapa toda (e ele existe por causa de uma
       # regressao que ja quebrou o deploy duas vezes), e uma falha de verdade nas
@@ -54,11 +58,11 @@ jobs:
         run: mvn -B test -DexcludedGroups=em-construcao
 
       # Informativo, nunca portao: mostra o placar da etapa em construcao sem
-      # derrubar o job. O passo aparece com aviso no GitHub enquanto houver
-      # cenario faltando, e fica verde sozinho quando a etapa fechar -- momento
-      # em que a tag @Tag("em-construcao") sai da classe e a suite passa a
-      # integrar o portao acima. Tirar a tag e o ritual que marca a etapa
-      # fechada.
+      # derrubar o job. Com a Etapa 3 fechada nao ha classe marcada, e o passo
+      # nao roda teste nenhum -- fica assim, e nao apagado, porque e o par do
+      # portao acima: quem abrir a proxima etapa poe a tag na classe nova e os
+      # dois passos voltam a fazer sentido juntos. Tirar a tag e o ritual que
+      # marca a etapa fechada.
       - name: mvn test (etapa em construcao)
         working-directory: server
         continue-on-error: true

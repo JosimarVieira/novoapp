@@ -24,11 +24,16 @@ import io.quarkus.test.common.WithTestResource;
  * -- e o cenario de acentuacao e saneamento posterior, nao escopo da Etapa 2a.
  * Sem isto, o portao de uma etapa fechada ficaria vermelho por trabalho que ela
  * nao prometeu.
+ *
+ * A exclusao de @etapa3 entrou em 2026-09-21 pelo mesmo motivo, e desta vez
+ * previsto: os cenarios de remover item da lista (ADR-0039) sao da Etapa 3, mas
+ * moram neste arquivo porque e da lista que eles falam. A tag da Funcionalidade
+ * os alcancaria, e eles pintariam de vermelho um portao verde.
  */
 @CucumberOptions(
         features = "../docs/03-specs/features",
         glue = "com.novoapp.acceptance",
-        tags = "@etapa2 and not @saneamento",
+        tags = "@etapa2 and not @saneamento and not @etapa3",
         plugin = "pretty")
 @WithTestResource(value = PostgresTestResource.class, scope = TestResourceScope.GLOBAL)
 class Etapa2AcceptanceTest extends CucumberQuarkusTest {

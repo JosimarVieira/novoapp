@@ -16,6 +16,9 @@ adrs:
   - ADR-0033
   - ADR-0035
   - ADR-0036
+  - ADR-0037
+  - ADR-0038
+  - ADR-0039
 ---
 
 # SDD — Módulo `conversation`
@@ -36,9 +39,11 @@ meio. A Etapa 2a fechou o resto da tabela da
 [ADR-0025](../01-adr/0025-desfazer-precedencia-e-escopo.md). É o módulo que mais
 cresceu na etapa, como o gatilho de revisão anterior previa.
 
-**Não cobre ainda**: `fecharCompra` e o elo lista → despesa (Etapa 3); tarefas
-(Etapa 2b); a central de pendências na web (Etapa 4 — o mecanismo está aqui, a
-tela não).
+**Não cobre ainda**: tarefas (Etapa 2b); a central de pendências na web
+(Etapa 4 — o mecanismo está aqui, a tela não).
+
+`fecharCompra` e o elo lista → despesa entraram em 2026-09-21 — ver a seção do
+elo abaixo.
 
 ## Depende de
 
@@ -374,11 +379,67 @@ lugar por chamada de modelo é um lugar para lembrar; treze seriam treze para
 esquecer. Desfecho sem proveniência (o construtor de três argumentos) é o de quem
 não gastou modelo, e o nulo no banco significa exatamente isso.
 
+## O elo, do lado da conversa (2026-09-21)
+
+**A previsão se confirmou: um valor no enum e um caso no `switch`.** O gatilho
+de revisão desta etapa perguntava se "fechar compra sem informar valor" caberia
+no mecanismo existente; depois da
+[ADR-0029](../01-adr/0029-intencao-adiada-e-precedencia-de-mensagem-nova.md) a
+resposta era "agora cabe", e coube: `PendingActionType` continua com cinco
+valores, e `DeferredAction` ganhou `CLOSE_PURCHASE`. A pergunta é `ASK_AMOUNT`, a
+mesma de uma despesa sem valor; a ação é outra. Antes daquela ADR, "quanto foi?"
+só sabia terminar em despesa e este cenário teria exigido tipo novo.
+
+**A ordem das guardas em `closePurchase` é a mesma de `registerExpense`, e pelo
+mesmo motivo**: valor ausente pergunta **antes** de a faixa baixa engolir a
+mensagem ([ADR-0033](../01-adr/0033-valor-ausente-com-categoria-conhecida-pergunta-o-valor.md)).
+"comprei tudo" sem valor tem cenário próprio; deixar a faixa baixa responder "não
+entendi essa" perderia um fechamento inteiro que o bot já tinha entendido — que é
+literalmente o defeito que a ADR-0033 consertou para despesa.
+
+**Confiança média não executa**, como toda intenção que escreve, e aqui a regra
+vale a dobrar: um fechamento errado fecha a lista da família **e** lança
+dinheiro.
+
+**As duas recusas de `CheckoutResult` viram a mesma pergunta.** `NoActiveList`
+("não existe lista") e `NothingToClose` ("esses itens não estão na lista") são
+situações diferentes no domínio e a mesma situação para quem escreveu: o que ela
+comprou não está na lista, e o dinheiro continua valendo. As duas oferecem
+registrar só a despesa, e a pendência guarda uma despesa comum — não há o que
+fechar. É o cenário `Fechar compra sem lista ativa` e o cenário
+`Fechar item que não está na lista`
+([ADR-0038](../01-adr/0038-item-com-valor-e-fechamento-parcial.md)).
+
+**O recibo diz os dois lados**, tanto no fechamento quanto no `desfazer`. No
+fechamento ele lista o que foi baixado, o valor, e **o que ainda falta** — que é
+a informação que a pessoa precisa no mercado, com o celular na mão. No
+`desfazer`, nomeia o que voltou para a lista: a
+[ADR-0032](../01-adr/0032-desfazer-alcanca-o-fechamento-inteiro.md) pede "um
+`desfazer`, um recibo, os dois lados", e sem isso três itens voltariam a ficar
+pendentes em silêncio.
+
+Essa parte do recibo é uma **leitura** depois do estorno
+(`shopping.reopenedItemsOf`), e não uma segunda escrita: o caminho da escrita é o
+evento CDI, cujo retorno se perde no observador. A transação já commitou inteira
+quando a consulta roda, então nada do que a ADR-0031 evita foi reintroduzido.
+
+**Remover item** (`removerItemLista`) segue o padrão de toda intenção que
+escreve, com uma diferença deliberada: item que não está na lista **não vira
+pergunta** ([ADR-0039](../01-adr/0039-remover-item-da-lista.md)). `comprei o
+feijão` oferece registrar como comprado porque comprar fora da lista é caso
+legítimo; remover o que não está lá não tem segunda leitura útil.
+
 ## Gatilhos de revisão
 
-- **Etapa 3**: `fecharCompra` acrescenta um tipo de pendência ("fechar compra
-  sem informar valor"). Respondido em 2026-09-16, ver acima: não cabia, o
-  desenho de `PendingActionType` mudou, e agora cabe.
+- ~~**Etapa 3**: `fecharCompra` acrescenta um tipo de pendência ("fechar compra
+  sem informar valor").~~ Respondido em 2026-09-16 e **confirmado ao escrever,
+  em 2026-09-21**: não precisou de tipo novo, só de um valor em
+  `DeferredAction`.
+- **[Decisão aberta #26](../DECISOES-ABERTAS.md)**: se `fecharCompra` passar a
+  poder criar categoria, `afterCategoryCreated` deixa de desembocar sempre em
+  `registerOrAskAmount` e vira um `switch` sobre `deferred`, como
+  `executeDeferred` já é. É o mesmo acoplamento que a ADR-0029 desfez uma vez,
+  sobrevivendo num método.
 - **Etapa 4**: a central de pendências vai ler `question_asked` e `options_json`
   para renderizar UI. A própria ADR-0018 registra que pode não ser suficiente —
   e agora há um dado a mais a considerar: o tipo, que hoje está dentro de

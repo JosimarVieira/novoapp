@@ -47,7 +47,8 @@ Adicione primeiro, use depois. Um conceito = um nome, sempre.
 |---|---|---|
 | Lista de compras | `ShoppingList` | Lista ativa do household. Um household tem no máximo uma lista ativa por vez — garantido por índice, não por disciplina de serviço. Nasce sob demanda, no primeiro item, e não no onboarding ([ADR-0027](../01-adr/0027-lista-de-compras-unica-e-sob-demanda.md)). |
 | Item da lista | `ListItem` | Item com status `PENDING` ou `PURCHASED`, com quem pediu e quem comprou. Quantidade e unidade são opcionais e nunca viram pergunta. Item que já está faltando não duplica: é reconhecido, com quem o pediu antes. |
-| Fechamento de compra | `ListCheckout` | Ato de marcar itens como comprados e gerar o lançamento correspondente. É o **elo** entre mercado e finanças. |
+| Fechamento de compra | `ListCheckout` | Ato de marcar itens como comprados e gerar o lançamento correspondente, **numa operação só**. É o **elo** entre mercado e finanças. Pode ser parcial, e a mesma lista pode registrar vários. A unidade do `desfazer` é o fechamento, não a lista ([ADR-0032](../01-adr/0032-desfazer-alcanca-o-fechamento-inteiro.md)). |
+| Item removido | `ListItemStatus.REMOVED` | Item que a família desistiu de comprar, tirado da lista sem ter sido comprado ([ADR-0039](../01-adr/0039-remover-item-da-lista.md)). Não é o mesmo que comprado: comprado vira dinheiro, removido não. Não é desfazível pelo chat — o caminho de volta é avisar de novo que o item está faltando. |
 
 ## Tarefas
 

@@ -43,7 +43,9 @@ public final class MarkItemPurchasedTool {
                         + "'ja comprei o cafe'. Use tambem quando o item estiver entre os itens "
                         + "pendentes do contexto -- e o caso normal. NAO use quando a pessoa "
                         + "pedir para REMOVER, tirar ou apagar o item da lista: quem desistiu de "
-                        + "comprar nao comprou. Nao registra despesa.")
+                        + "comprar nao comprou -- isso e removerItemLista. NAO use quando houver um "
+                        + "valor de dinheiro na mensagem: 'comprei o arroz, 20' e fecharCompra, que "
+                        + "marca o item E lanca a despesa. Nao registra despesa.")
                 .parameters(JsonObjectSchema.builder()
                         .addProperty(ITEM_PARAMETER, JsonStringSchema.builder()
                                 .description("Nome do produto comprado, no singular e com inicial maiuscula. "

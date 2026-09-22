@@ -14,6 +14,9 @@ adrs:
   - ADR-0034
   - ADR-0035
   - ADR-0036
+  - ADR-0037
+  - ADR-0038
+  - ADR-0039
 ---
 
 # SDD — Módulo `nlu`
@@ -355,15 +358,56 @@ para que essa degradação não passe silenciosa num upgrade da biblioteca.
 `nlu` **não grava** nada disso: quem grava é `channel`, no log de ingestão, e o
 valor sobe dentro do `ProcessingOutcome`.
 
+## O cardápio da Etapa 3 (2026-09-21)
+
+Duas tools novas, e as duas por defeito observado em uso real, não por
+completude:
+
+- **`fecharCompra`** — o elo
+  ([ADR-0031](../01-adr/0031-atomicidade-do-fechamento-de-compra.md)). Leva os
+  itens comprados (vazio = "comprei tudo"), o valor e a categoria. A categoria é
+  o **mesmo enum** de `registrarDespesa`, e **não** existe `categoria_sugerida`
+  aqui ([ADR-0037](../01-adr/0037-categoria-da-despesa-do-fechamento.md)):
+  fechar lista não é onde a família batiza categoria nova, e categoria não
+  resolvida vira `Intent.Unknown` em vez de palpite — o mesmo critério que
+  `registrarDespesa` sem categoria nenhuma já seguia.
+- **`removerItemLista`**
+  ([ADR-0039](../01-adr/0039-remover-item-da-lista.md)) — o destino que faltava
+  para `remover chocolate`, que voltava como `marcarItemComprado` com confiança
+  0,9 porque o modelo não tinha ferramenta melhor.
+
+**O que separa `fecharCompra` de `marcarItemComprado` é um valor de dinheiro na
+mensagem**, e as duas descrições dizem isso uma da outra. `açúcar 20` é
+fechamento parcial de um item só
+([ADR-0038](../01-adr/0038-item-com-valor-e-fechamento-parcial.md)), e
+`adicionarItemLista` ganhou a negativa correspondente: quem ainda não comprou
+não sabe o preço.
+
+**A guarda do valor escrito ([ADR-0034](../01-adr/0034-valor-so-vale-se-a-pessoa-escreveu-digito.md))
+passou a valer para as duas tools que lançam dinheiro.** Ela era específica de
+`registrarDespesa`; deixá-la assim faria a alucinação de valor voltar pela porta
+nova — e nesta porta ela fecha a lista junto.
+
+**Toda tool nova entra no `staticFingerprint()`**, e isso é armadilha, não
+formalidade: tool de fora não quebra nada — o hash continua estável e
+`InterpretationFingerprintTest` continua verde, porque ele testa estabilidade e
+formato, não cobertura. O que some em silêncio é exatamente o que a
+[ADR-0036](../01-adr/0036-instrumento-de-medicao-da-etapa-5.md) quer detectar:
+mudança na descrição de um parâmetro daquela tool.
+
 ## Gatilhos de revisão
 
-- **Etapa 3**: entra `fecharCompra`. O contexto já leva os itens pendentes, então
-  o `ContextBuilder` não muda — só a lista de tools.
-- **Etapa 5**: seis tools disputando a escolha do modelo em toda mensagem é
-  bastante contexto. Se a matriz de confusão mostrar tool errada escolhida com
-  frequência, é aqui que se decide reduzir o cardápio por situação — e a
-  `confirmarCategoriaSugerida`, que já é declarada só no momento em que serve, é
-  o precedente de como fazer isso.
+- ~~**Etapa 3**: entra `fecharCompra`.~~ **Feito em 2026-09-21**, e o
+  `ContextBuilder` não mudou, como previsto — só a lista de tools.
+- **Etapa 5**: o cardápio foi de seis para **oito**, e o aviso abaixo era sobre
+  seis. Quatro das oito falam de item de lista
+  (`adicionarItemLista`, `marcarItemComprado`, `removerItemLista`,
+  `fecharCompra`), e três delas se distinguem por detalhes da frase — tempo do
+  verbo e presença de um número. Se a matriz de confusão mostrar tool errada
+  escolhida com frequência, é aqui que se decide reduzir o cardápio por situação
+  — e a `confirmarCategoriaSugerida`, que já é declarada só no momento em que
+  serve, é o precedente de como fazer isso. **Encolher o cardápio é a saída;
+  reescrever descrição pela quarta vez não é.**
 - Se a exclusividade mútua entre `categoria` e `categoria_sugerida` for violada
   com frequência relevante pelo modelo, a ADR-0024 já prevê reabrir a decisão —
   inclusive voltar à tool `criarCategoria` separada que ela descartou.

@@ -34,6 +34,64 @@ public class ListItemRepository implements PanacheRepositoryBase<ListItem, UUID>
     }
 
     /**
+     * Liga os itens ao fechamento que os comprou, por <code>UPDATE</code> em
+     * massa -- uma coluna, uma instrucao, sem passar pelo estado das entidades.
+     *
+     * <p>Nao e otimizacao. O fechamento escreve em <code>list_item</code>
+     * <b>duas vezes</b> na mesma transacao: primeiro o status, que precisa estar
+     * no banco antes de <code>finance</code> ser chamado (e o que da ao rollback
+     * o que desfazer, ADR-0031), e depois este vinculo, que so pode existir
+     * depois de o <code>list_checkout</code> ter id. Escrever a segunda pelo
+     * estado das entidades fazia o Hibernate reemitir a linha inteira com os
+     * valores de <b>antes</b> do primeiro flush -- o status voltava a
+     * <code>PENDING</code> e o <code>purchased_by_member_id</code> a nulo, em
+     * silencio, com o fechamento e o lancamento gravados do mesmo jeito.
+     * Observado em 2026-09-21, e so visivel porque os cenarios do elo conferem o
+     * status.
+     */
+    public void linkToCheckout(List<UUID> itemIds, UUID listCheckoutId) {
+        if (itemIds.isEmpty()) {
+            return;
+        }
+        update("listCheckoutId = ?1 where id in ?2", listCheckoutId, itemIds);
+    }
+
+    /**
+     * Os itens que <b>aquele</b> fechamento fechou -- nao a lista inteira
+     * (ADR-0032: "o fechamento e a unidade"). E o que o <code>desfazer</code>
+     * devolve a <code>PENDING</code>.
+     */
+    public List<ListItem> listPurchasedByCheckout(UUID listCheckoutId) {
+        return list("listCheckoutId = ?1 and status = ?2 order by createdAt",
+                listCheckoutId, ListItemStatus.PURCHASED);
+    }
+
+    /**
+     * O que aquele fechamento fechou e ja voltou a <code>PENDING</code> -- a
+     * leitura que o recibo do <code>desfazer</code> usa para nomear os dois
+     * lados (ADR-0032). O vinculo com o fechamento sobrevive ao estorno de
+     * proposito: e a procedencia do item, e e o que torna esta consulta possivel.
+     */
+    public List<ListItem> listPendingByCheckout(UUID listCheckoutId) {
+        return list("listCheckoutId = ?1 and status = ?2 order by createdAt",
+                listCheckoutId, ListItemStatus.PENDING);
+    }
+
+    /**
+     * Existe outro item pendente com este nome normalizado?
+     *
+     * <p>A pergunta que o <code>desfazer</code> do fechamento faz item a item:
+     * quem ja avisou de novo que o arroz acabou criou um <code>PENDING</code>, e
+     * o indice unico parcial da ADR-0030 nao aceita um segundo. O item daquele
+     * fechamento fica <code>PURCHASED</code>, e nao e perda -- o efeito
+     * pretendido ja esta alcancado (ADR-0032).
+     */
+    public boolean hasOtherPendingWithSameName(UUID shoppingListId, String nameNormalized, UUID exceptId) {
+        return count("shoppingListId = ?1 and status = ?2 and nameNormalized = ?3 and id <> ?4",
+                shoppingListId, ListItemStatus.PENDING, nameNormalized, exceptId) > 0;
+    }
+
+    /**
      * Comparacao pela forma normalizada -- minuscula e sem acento (ADR-0030) --,
      * a mesma do indice unico parcial que sustenta "item repetido nao duplica"
      * (sdd-modulo-shopping.md).

@@ -7,11 +7,13 @@ import com.novoapp.nlu.spi.InterpretationRequest;
 import com.novoapp.nlu.spi.MessageInterpreter;
 import com.novoapp.nlu.spi.ToolCall;
 import com.novoapp.nlu.tools.AddListItemTool;
+import com.novoapp.nlu.tools.ClosePurchaseTool;
 import com.novoapp.nlu.tools.ConfirmSuggestedCategoryTool;
 import com.novoapp.nlu.tools.InviteMemberTool;
 import com.novoapp.nlu.tools.MarkItemPurchasedTool;
 import com.novoapp.nlu.tools.QueryListTool;
 import com.novoapp.nlu.tools.RegisterExpenseTool;
+import com.novoapp.nlu.tools.RemoveListItemTool;
 import com.novoapp.shopping.ItemDraft;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -111,6 +113,8 @@ public class NluService {
             case RegisterExpenseTool.NAME -> registerExpense(call, text, categoriesByLabel);
             case AddListItemTool.NAME -> addListItems(call);
             case MarkItemPurchasedTool.NAME -> markItemPurchased(call);
+            case ClosePurchaseTool.NAME -> closePurchase(call, text, categoriesByLabel);
+            case RemoveListItemTool.NAME -> removeListItem(call);
             case QueryListTool.NAME -> new Intent.QueryList(
                     confidenceOf(call, QueryListTool.CONFIDENCE_PARAMETER));
             case InviteMemberTool.NAME -> inviteMember(call);
@@ -238,6 +242,54 @@ public class NluService {
                 confidenceOf(call, MarkItemPurchasedTool.CONFIDENCE_PARAMETER));
     }
 
+    /**
+     * O elo (ADR-0031). Duas recusas, e as duas devolvem {@link Intent.Unknown}
+     * em vez de um palpite.
+     *
+     * <p><b>Sem categoria resolvida nao ha fechamento</b> (ADR-0037):
+     * <code>fecharCompra</code> nao tem <code>categoria_sugerida</code>, porque
+     * fechar lista nao e onde a familia batiza categoria nova. E o mesmo
+     * criterio que {@link #registerExpense} ja aplica ao ser chamado sem
+     * categoria nenhuma.
+     *
+     * <p><b>Sem digito na mensagem nao ha valor</b> (ADR-0034): a mesma guarda da
+     * despesa, e aqui ela vale mais -- um valor alucinado num fechamento escreve
+     * dinheiro <b>e</b> fecha a lista. Sem valor, o fechamento inteiro fica
+     * guardado numa pendencia e o bot pergunta quanto foi.
+     */
+    private Intent closePurchase(ToolCall call, String text,
+                                 Map<String, CategoryView> categoriesByLabel) {
+        String chosen = call.text(ClosePurchaseTool.CATEGORY_PARAMETER);
+        Optional<CategoryView> category = chosen == null
+                ? Optional.empty()
+                : categoriesByLabel.entrySet().stream()
+                        .filter(entry -> sameText(entry.getKey(), chosen)
+                                || sameText(entry.getValue().name(), chosen))
+                        .map(Map.Entry::getValue)
+                        .findFirst();
+        if (category.isEmpty()) {
+            return Intent.unknown();
+        }
+
+        List<String> itemNames = call.strings(ClosePurchaseTool.ITEMS_PARAMETER).stream()
+                .map(String::trim)
+                .filter(name -> !name.isEmpty())
+                .toList();
+
+        return new Intent.ClosePurchase(itemNames, category.get().id(), category.get().displayName(),
+                amountWrittenBy(call, text, ClosePurchaseTool.AMOUNT_PARAMETER),
+                confidenceOf(call, ClosePurchaseTool.CONFIDENCE_PARAMETER));
+    }
+
+    private Intent removeListItem(ToolCall call) {
+        String item = call.text(RemoveListItemTool.ITEM_PARAMETER);
+        if (item == null) {
+            return Intent.unknown();
+        }
+        return new Intent.RemoveListItem(item,
+                confidenceOf(call, RemoveListItemTool.CONFIDENCE_PARAMETER));
+    }
+
     private Intent inviteMember(ToolCall call) {
         String name = call.text(InviteMemberTool.MEMBER_NAME_PARAMETER);
         String phone = call.text(InviteMemberTool.PHONE_PARAMETER);
@@ -280,14 +332,24 @@ public class NluService {
      * ADR-0033 -- "Quanto foi em Mercado?" --, que e o certo.
      */
     private Long amountWrittenBy(ToolCall call, String text) {
+        return amountWrittenBy(call, text, RegisterExpenseTool.AMOUNT_PARAMETER);
+    }
+
+    /**
+     * O parametro e explicito porque a guarda passou a valer para duas tools:
+     * <code>registrarDespesa</code> e <code>fecharCompra</code> (ADR-0031). Se a
+     * guarda cobrisse so a primeira, a alucinacao de valor teria voltado pela
+     * segunda -- e na segunda ela fecha a lista junto.
+     */
+    private Long amountWrittenBy(ToolCall call, String text, String parameter) {
         if (text == null || text.chars().noneMatch(Character::isDigit)) {
             return null;
         }
-        return amountCentsOf(call);
+        return amountCentsOf(call, parameter);
     }
 
-    private Long amountCentsOf(ToolCall call) {
-        BigDecimal amount = call.decimal(RegisterExpenseTool.AMOUNT_PARAMETER);
+    private Long amountCentsOf(ToolCall call, String parameter) {
+        BigDecimal amount = call.decimal(parameter);
         if (amount == null) {
             return null;
         }

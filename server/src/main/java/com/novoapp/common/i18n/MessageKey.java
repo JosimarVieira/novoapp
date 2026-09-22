@@ -46,6 +46,8 @@ public enum MessageKey {
     CONFIRM_LIST_ITEMS_ONE("confirm.list.items.one"),
     CONFIRM_LIST_ITEMS_MANY("confirm.list.items.many"),
     CONFIRM_MARK_PURCHASED("confirm.mark.purchased"),
+    CONFIRM_REMOVE_ITEM("confirm.remove.item"),
+    CONFIRM_CHECKOUT("confirm.checkout"),
     CONFIRM_INVITE("confirm.invite"),
 
     // -------------------------------------------------------------- pendencia
@@ -65,6 +67,16 @@ public enum MessageKey {
     LIST_PENDING("list.pending"),
     LIST_ITEM_QUANTITY("list.item.quantity"),
     LIST_ITEM_QUANTITY_UNIT("list.item.quantity.unit"),
+    LIST_REMOVED("list.removed"),
+    LIST_REMOVE_NOT_ON_THE_LIST("list.remove.not.on.the.list"),
+
+    // -------------------------------------------- o elo (ADR-0031, ADR-0032)
+    CHECKOUT_RECEIPT_ONE("checkout.receipt.one"),
+    CHECKOUT_RECEIPT_MANY("checkout.receipt.many"),
+    CHECKOUT_RECEIPT_REMAINING("checkout.receipt.remaining"),
+    CHECKOUT_AMOUNT_ASK("checkout.amount.ask"),
+    CHECKOUT_OFFER_EXPENSE_ONLY("checkout.offer.expense.only"),
+    CHECKOUT_REVERSAL_ITEMS("checkout.reversal.items"),
 
     // --------------------------------------------------------------- convite
     INVITE_ISSUED("invite.issued"),

@@ -143,6 +143,21 @@ public class ReceiptFormatter {
                 + Messages.get(locale, MessageKey.CONFIRM_FOOTER);
     }
 
+    public String confirmRemoveListItem(Locale locale, String itemName) {
+        return Messages.get(locale, MessageKey.CONFIRM_REMOVE_ITEM, itemName)
+                + Messages.get(locale, MessageKey.CONFIRM_FOOTER);
+    }
+
+    /**
+     * O elo em confianca media. Ecoa valor e categoria, e nao os itens: o
+     * <code>sim</code> aqui escreve nos dois dominios de uma vez, e e o
+     * dinheiro que a pessoa nao consegue conferir de cabeca depois.
+     */
+    public String confirmCheckout(Locale locale, String categoryLabel, long amountCents) {
+        return Messages.get(locale, MessageKey.CONFIRM_CHECKOUT, formatAmount(amountCents), categoryLabel)
+                + Messages.get(locale, MessageKey.CONFIRM_FOOTER);
+    }
+
     /** O convite e o mais caro de errar: um numero errado ganha entrada na familia. */
     public String confirmInvite(Locale locale, String memberName, String phoneNumber) {
         return Messages.get(locale, MessageKey.CONFIRM_INVITE, memberName, phoneNumber)
@@ -164,7 +179,14 @@ public class ReceiptFormatter {
     }
 
     /** ADR-0025: estorno do lancamento mais recente do household, de qualquer membro. */
-    public String reversalReceipt(ReversedExpense reversed, String createdByName, ResolvedContext context) {
+    /**
+     * @param reopenedItems o que voltou para a lista de compras, vazio no estorno
+     *        de um lancamento avulso. A ADR-0032 pede "um desfazer, um recibo, os
+     *        dois lados" -- sem esta parte, tres itens voltariam a ficar
+     *        pendentes em silencio
+     */
+    public String reversalReceipt(ReversedExpense reversed, String createdByName,
+                                  List<String> reopenedItems, ResolvedContext context) {
         Locale locale = context.locale();
         StringBuilder receipt = new StringBuilder(Messages.get(locale, MessageKey.REVERSAL_RECEIPT,
                 reversed.categoryDisplayName(), formatAmount(reversed.amountCents())));
@@ -174,7 +196,12 @@ public class ReceiptFormatter {
             // pessoa.
             receipt.append(Messages.get(locale, MessageKey.REVERSAL_RECEIPT_BY, createdByName));
         }
-        return receipt.append(Messages.get(locale, MessageKey.REVERSAL_RECEIPT_FOOTER)).toString();
+        receipt.append(Messages.get(locale, MessageKey.REVERSAL_RECEIPT_FOOTER));
+        if (!reopenedItems.isEmpty()) {
+            receipt.append(Messages.get(locale, MessageKey.CHECKOUT_REVERSAL_ITEMS,
+                    bulleted(locale, reopenedItems)));
+        }
+        return receipt.toString();
     }
 
     public String nothingToReverse(Locale locale) {
@@ -254,6 +281,74 @@ public class ReceiptFormatter {
     /** Cenario "Item mencionado nao existe na lista": pergunta, nunca erro. */
     public String offerPurchaseOfUnlistedItem(Locale locale, String itemName) {
         return Messages.get(locale, MessageKey.LIST_PURCHASE_OFFER, itemName);
+    }
+
+    public String removedReceipt(Locale locale, String itemName) {
+        return Messages.get(locale, MessageKey.LIST_REMOVED, itemName);
+    }
+
+    /**
+     * ADR-0039: remover o que nao esta la nao vira pergunta -- nao ha o que
+     * oferecer. Diferente de {@link #offerPurchaseOfUnlistedItem}, que oferece,
+     * porque comprar algo fora da lista e caso legitimo.
+     */
+    public String removeItemNotOnTheList(Locale locale, String itemName) {
+        return Messages.get(locale, MessageKey.LIST_REMOVE_NOT_ON_THE_LIST, itemName);
+    }
+
+    // ------------------------------------------------------------------
+    // O elo (ADR-0031, ADR-0032)
+    // ------------------------------------------------------------------
+
+    /**
+     * <b>O recibo do elo</b>: uma mensagem, uma operacao, os dois lados.
+     *
+     * <p>Diz os itens <b>e</b> o dinheiro porque foi uma escrita so e porque o
+     * <code>desfazer</code> reverte as duas (ADR-0032). Recibo que falasse so do
+     * lancamento esconderia metade do efeito -- e esconder metade do efeito e o
+     * defeito que a decisao aberta #23 registrou duas vezes.
+     *
+     * <p>Lista o que ainda falta quando o fechamento foi parcial: e a informacao
+     * que a pessoa precisa <b>no mercado</b>, no instante em que esta com o
+     * celular na mao.
+     */
+    public String checkoutReceipt(Locale locale, com.novoapp.shopping.CheckoutResult.Closed closed,
+                                  List<ListItemView> stillPending) {
+        String amount = formatAmount(closed.amountCents());
+        StringBuilder receipt = new StringBuilder(closed.itemsPurchased() == 1
+                ? Messages.get(locale, MessageKey.CHECKOUT_RECEIPT_ONE,
+                        amount, closed.categoryDisplayName(), closed.itemNames().get(0))
+                : Messages.get(locale, MessageKey.CHECKOUT_RECEIPT_MANY,
+                        amount, closed.categoryDisplayName(), closed.itemsPurchased(),
+                        bulleted(locale, closed.itemNames())));
+        if (!stillPending.isEmpty()) {
+            receipt.append(Messages.get(locale, MessageKey.CHECKOUT_RECEIPT_REMAINING,
+                    bulleted(locale, stillPending.stream()
+                            .map(item -> describeItem(locale, item)).toList())));
+        }
+        return receipt.append("\n")
+                .append(Messages.get(locale, MessageKey.RECEIPT_UNDO_HINT))
+                .toString();
+    }
+
+    /**
+     * "comprei tudo" sem valor. Pergunta curta, sem categoria no texto: a
+     * categoria ja esta resolvida e repeti-la aqui faria a pergunta parecer uma
+     * despesa avulsa, que e justamente o que ela nao e.
+     */
+    public String askCheckoutAmount(Locale locale) {
+        return Messages.get(locale, MessageKey.CHECKOUT_AMOUNT_ASK);
+    }
+
+    /**
+     * Cenarios "Fechar compra sem lista ativa" e "Fechar item que nao esta na
+     * lista": as duas recusas nomeadas de {@code CheckoutResult} viram a mesma
+     * pergunta, porque do ponto de vista de quem escreveu sao a mesma situacao
+     * -- o que ela comprou nao esta na lista, e o dinheiro continua valendo.
+     */
+    public String offerExpenseOnly(Locale locale, String categoryLabel, long amountCents) {
+        return Messages.get(locale, MessageKey.CHECKOUT_OFFER_EXPENSE_ONLY,
+                formatAmount(amountCents), categoryLabel);
     }
 
     public String pendingList(Locale locale, List<ListItemView> items) {

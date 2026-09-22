@@ -41,6 +41,14 @@ public class AcceptanceWorld {
     @Inject
     com.novoapp.support.StubMessageInterpreter interpreter;
 
+    /**
+     * O cenario de falha da ADR-0031 liga a indisponibilidade de
+     * <code>finance</code>; sem desligar aqui, ela vazaria para o proximo
+     * cenario e o tornaria vermelho por um motivo que ninguem escreveu.
+     */
+    @Inject
+    com.novoapp.support.UnavailableExpenseRegistration finance;
+
     private final Map<String, String> externalIds = new HashMap<>();
     private final Map<String, String> displayNames = new HashMap<>();
 
@@ -66,6 +74,7 @@ public class AcceptanceWorld {
         fixtures.truncateAll();
         outbound.clear();
         interpreter.resetCallCount();
+        finance.makeAvailable();
         externalIds.clear();
         displayNames.clear();
         households.clear();

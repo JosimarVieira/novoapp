@@ -9,6 +9,7 @@ import com.novoapp.finance.entity.TransactionSource;
 import com.novoapp.finance.repository.CategoryRepository;
 import com.novoapp.finance.repository.TransactionRepository;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 
@@ -43,6 +44,15 @@ public class FinanceService {
 
     @Inject
     Clock clock;
+
+    /**
+     * O anuncio do estorno (ADR-0032). Sincrono e na mesma transacao -- o
+     * observador que devolve os itens da lista a <code>PENDING</code> mora em
+     * <code>shopping</code>, porque a direcao de dependencia so permite esse
+     * sentido.
+     */
+    @Inject
+    Event<ExpenseReversed> expenseReversed;
 
     /**
      * Registra uma despesa ja interpretada.
@@ -107,6 +117,13 @@ public class FinanceService {
      * importa em financas compartilhadas -- quando duas pessoas mexem no mesmo
      * dado, "sumiu" e pior que "foi estornado por fulano" (modelo-de-dados.md).
      *
+     * <p>Publica {@link ExpenseReversed} <b>dentro da propria transacao</b>
+     * (ADR-0032). Este modulo nao sabe -- e nao pode saber -- que existem
+     * fechamentos de compra: quem descobre que este lancamento veio de um
+     * <code>list_checkout</code> e devolve os itens a <code>PENDING</code> e o
+     * observador em <code>shopping</code>. Se ele falhar, o estorno cai junto,
+     * que e o ponto.
+     *
      * @return vazio quando nao ha nada a estornar
      */
     @Transactional
@@ -116,6 +133,8 @@ public class FinanceService {
             transaction.reversedAt = Instant.now(clock);
             transaction.reversedByMemberId = memberId;
             transactions.flush();
+
+            expenseReversed.fire(new ExpenseReversed(transaction.id, householdId));
 
             Category category = categories.findById(transaction.categoryId);
             return new ReversedExpense(transaction.id, transaction.amountCents,

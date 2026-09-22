@@ -67,6 +67,28 @@ Funcionalidade: Fechamento de compra gerando lançamento
     E a despesa de R$ 180,00 é estornada
     E "Bruno" recebe a confirmação do estorno
 
+  # ADR-0038, decisão aberta #23. Em uso real esta mensagem errou de dois jeitos
+  # em dois dias: em 2026-09-18 virou item de lista e os 20 sumiram; em
+  # 2026-09-19 virou despesa avulsa e o item ficou pendente depois de comprado.
+  # Um item com valor é fechamento parcial de um item só -- é o mesmo
+  # `fecharCompra` do cenário acima, com um nome na lista.
+  Cenário: Item com valor na mesma mensagem fecha só aquele item
+    Dado que o item "Açúcar" também está pendente na lista
+    Quando "Bruno" envia "açúcar 20"
+    Então o item "Açúcar" fica com status comprado
+    E os itens "Arroz", "Leite" e "Café" continuam pendentes
+    E uma despesa de R$ 20,00 é registrada na categoria "Mercado"
+    E o fechamento fica ligado à despesa criada
+
+  # ADR-0038: fechar item que ninguém pediu não escreve nada antes de perguntar.
+  # É a mesma recusa nomeada do cenário "Fechar compra sem lista ativa", vinda
+  # do outro lado -- lá não havia lista, aqui não havia o item.
+  Cenário: Fechar item que não está na lista
+    Quando "Bruno" envia "açúcar 20"
+    Então nenhum item muda de status
+    E nenhuma despesa é registrada
+    E "Bruno" recebe uma pergunta oferecendo registrar apenas a despesa
+
   Cenário: Fechar compra sem lista ativa
     Dado que não existe lista de compras ativa no household "Silva"
     Quando "Bruno" envia "comprei tudo, 180"

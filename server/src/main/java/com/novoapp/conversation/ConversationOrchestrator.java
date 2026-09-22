@@ -17,9 +17,11 @@ import com.novoapp.identity.spi.OutboundMessagePort;
 import com.novoapp.nlu.Intent;
 import com.novoapp.nlu.NluService;
 import com.novoapp.shopping.AddedItem;
+import com.novoapp.shopping.CheckoutResult;
 import com.novoapp.shopping.ItemDraft;
 import com.novoapp.shopping.ListItemView;
 import com.novoapp.shopping.MarkPurchasedResult;
+import com.novoapp.shopping.RemoveItemResult;
 import com.novoapp.shopping.ShoppingService;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -339,6 +341,19 @@ public class ConversationOrchestrator {
                 reply.send(receipts.purchasedReceipt(reply.locale, purchased.name()));
                 yield executed(json(Map.of("tool", "marcarItemComprado", "item", purchased.name())));
             }
+            case CLOSE_PURCHASE -> {
+                List<PendingIntent.Option> options = intent.optionsOrEmpty();
+                if (options.isEmpty() || amountCents == null || amountCents <= 0) {
+                    // Pendencia de fechamento sem categoria ou sem valor guardado
+                    // nao deveria existir; tratar como "nao entendi" e melhor que
+                    // estourar em cima de uma compra inteira.
+                    LOG.warnf("Pendencia de fechamento sem categoria ou sem valor: %s", intent);
+                    yield notUnderstood(reply, 0.0d);
+                }
+                yield checkout(context, options.get(0), intent.itemNamesOrEmpty(), amountCents,
+                        intent.sourceMessageId(), reply);
+            }
+            case REMOVE_LIST_ITEM -> removeItem(context, intent.itemName(), reply);
             case INVITE_MEMBER -> issueInvite(context, intent.memberName(), intent.phoneNumber(), reply);
         };
     }
@@ -420,6 +435,8 @@ public class ConversationOrchestrator {
             case Intent.RegisterExpense expense -> registerExpense(expense, message, context, reply);
             case Intent.AddListItems items -> addListItems(items, message, context, reply);
             case Intent.MarkItemPurchased purchase -> markItemPurchased(purchase, message, context, reply);
+            case Intent.ClosePurchase purchase -> closePurchase(purchase, message, context, reply);
+            case Intent.RemoveListItem removal -> removeListItem(removal, message, context, reply);
             case Intent.QueryList query -> queryList(query, context, reply);
             case Intent.InviteMember invite -> inviteMember(invite, message, context, reply);
             // Correcao de categoria so existe respondendo a uma pendencia; fora
@@ -551,7 +568,12 @@ public class ConversationOrchestrator {
         }
         ReversedExpense expense = reversed.get();
         String createdBy = members.nameOf(expense.createdByMemberId()).orElse(null);
-        reply.send(receipts.reversalReceipt(expense, createdBy, context));
+        // O outro lado do desfazer ja aconteceu, dentro da transacao de finance,
+        // pelo observador de ExpenseReversed em shopping (ADR-0032). Aqui e so
+        // leitura, para o recibo poder dizer o que voltou para a lista -- a ADR
+        // pede "um desfazer, um recibo, os dois lados".
+        List<String> reopened = shopping.reopenedItemsOf(context.householdId(), expense.transactionId());
+        reply.send(receipts.reversalReceipt(expense, createdBy, reopened, context));
         return executed(json(Map.of("tool", "desfazer", "transaction_id", expense.transactionId().toString())));
     }
 
@@ -624,6 +646,154 @@ public class ConversationOrchestrator {
                 pendingActions.open(context,
                         PendingIntent.confirmPurchase(missing.name(), sourceMessageId), question, List.of());
                 reply.send(question);
+                yield interpreted();
+            }
+        };
+    }
+
+    // ------------------------------------------------------------------
+    // O elo (ADR-0031, ADR-0032, ADR-0037, ADR-0038)
+    // ------------------------------------------------------------------
+
+    /**
+     * <b>O elo.</b> A intencao mais cara de errar do produto: escreve na lista e
+     * no dinheiro de uma vez.
+     *
+     * <p>A ordem das guardas nao e arbitraria, e e a mesma de
+     * {@link #registerExpense}: <b>valor ausente pergunta antes de a faixa baixa
+     * engolir a mensagem</b> (ADR-0033). "comprei tudo" sem valor chega com
+     * confianca qualquer e tem cenario proprio -- deixar a faixa baixa responder
+     * "nao entendi essa" perderia um fechamento inteiro que o bot ja tinha
+     * entendido.
+     *
+     * <p>Em faixa media nao executa, como toda intencao que escreve (ADR-0029), e
+     * aqui a regra vale a dobrar: um fechamento errado fecha a lista da familia
+     * <i>e</i> lanca dinheiro.
+     */
+    private ProcessingOutcome closePurchase(Intent.ClosePurchase intent,
+                                            InboundMessage message,
+                                            ResolvedContext context,
+                                            Reply reply) {
+        ConfidencePolicy.Level level = confidence.levelOf(intent.confidence());
+        PendingIntent.Option category =
+                new PendingIntent.Option(intent.categoryId(), intent.categoryDisplayName());
+
+        if (!intent.hasAmount()) {
+            String question = receipts.askCheckoutAmount(reply.locale);
+            pendingActions.open(context,
+                    PendingIntent.askCheckoutAmount(category, intent.itemNames(), message.id()),
+                    question, List.of());
+            reply.send(question);
+            return interpreted();
+        }
+
+        if (level == ConfidencePolicy.Level.LOW) {
+            return notUnderstood(reply, intent.confidence());
+        }
+
+        if (level == ConfidencePolicy.Level.MEDIUM) {
+            String question = receipts.confirmCheckout(reply.locale, category.label(),
+                    intent.amountCents());
+            pendingActions.open(context,
+                    PendingIntent.confirmCheckout(category, intent.amountCents(), intent.itemNames(),
+                            message.id()),
+                    question, List.of());
+            reply.send(question);
+            return interpreted(intent.confidence());
+        }
+
+        return checkout(context, category, intent.itemNames(), intent.amountCents(),
+                message.id(), reply);
+    }
+
+    /**
+     * Uma chamada, uma transacao, os dois dominios (ADR-0031). O orquestrador
+     * nao abre transacao propria -- a atomicidade e regra de dominio e mora em
+     * <code>shopping</code>.
+     *
+     * <p>As duas recusas nomeadas viram a <b>mesma</b> pergunta: do ponto de
+     * vista de quem escreveu, "nao ha lista" e "esses itens nao estao na lista"
+     * sao a mesma situacao, e o dinheiro continua valendo nas duas. A pendencia
+     * guarda uma despesa comum, e nao um fechamento: nao ha o que fechar.
+     */
+    private ProcessingOutcome checkout(ResolvedContext context,
+                                       PendingIntent.Option category,
+                                       List<String> itemNames,
+                                       long amountCents,
+                                       UUID sourceMessageId,
+                                       Reply reply) {
+        CheckoutResult result = shopping.checkout(context.householdId(), context.memberId(),
+                itemNames, category.id(), amountCents, sourceMessageId);
+
+        return switch (result) {
+            case CheckoutResult.Closed closed -> {
+                // O que ainda falta vai no recibo: e a informacao que a pessoa
+                // precisa no mercado, com o celular na mao.
+                reply.send(receipts.checkoutReceipt(reply.locale, closed,
+                        shopping.pendingItems(context.householdId())));
+                yield executed(json(Map.of("tool", "fecharCompra",
+                        "itens", closed.itemNames(),
+                        "categoria", closed.categoryDisplayName(),
+                        "valor_cents", closed.amountCents())));
+            }
+            case CheckoutResult.NoActiveList ignored -> offerExpenseOnly(context, category,
+                    amountCents, sourceMessageId, reply);
+            case CheckoutResult.NothingToClose ignored -> offerExpenseOnly(context, category,
+                    amountCents, sourceMessageId, reply);
+        };
+    }
+
+    private ProcessingOutcome offerExpenseOnly(ResolvedContext context,
+                                               PendingIntent.Option category,
+                                               long amountCents,
+                                               UUID sourceMessageId,
+                                               Reply reply) {
+        String question = receipts.offerExpenseOnly(reply.locale, category.label(), amountCents);
+        pendingActions.open(context,
+                PendingIntent.confirmExpense(category, amountCents, null, sourceMessageId),
+                question, List.of());
+        reply.send(question);
+        return interpreted();
+    }
+
+    // ------------------------------------------------------------------
+    // Remocao de item (ADR-0039)
+    // ------------------------------------------------------------------
+
+    private ProcessingOutcome removeListItem(Intent.RemoveListItem intent,
+                                             InboundMessage message,
+                                             ResolvedContext context,
+                                             Reply reply) {
+        ConfidencePolicy.Level level = confidence.levelOf(intent.confidence());
+        if (level == ConfidencePolicy.Level.LOW) {
+            return notUnderstood(reply, intent.confidence());
+        }
+        if (level == ConfidencePolicy.Level.MEDIUM) {
+            String question = receipts.confirmRemoveListItem(reply.locale, intent.itemName());
+            pendingActions.open(context,
+                    PendingIntent.confirmRemoveListItem(intent.itemName(), message.id()),
+                    question, List.of());
+            reply.send(question);
+            return interpreted(intent.confidence());
+        }
+        return removeItem(context, intent.itemName(), reply);
+    }
+
+    /**
+     * Item que nao esta na lista nao vira pergunta aqui (ADR-0039), diferente de
+     * {@link #markPurchased}: comprar algo fora da lista e caso legitimo e tem
+     * oferta propria; remover o que nao esta la nao tem segunda leitura util.
+     */
+    private ProcessingOutcome removeItem(ResolvedContext context, String itemName, Reply reply) {
+        RemoveItemResult result = shopping.removeItem(context.householdId(), context.memberId(),
+                itemName);
+        return switch (result) {
+            case RemoveItemResult.Removed removed -> {
+                reply.send(receipts.removedReceipt(reply.locale, removed.name()));
+                yield executed(json(Map.of("tool", "removerItemLista", "item", removed.name())));
+            }
+            case RemoveItemResult.NotOnTheList missing -> {
+                reply.send(receipts.removeItemNotOnTheList(reply.locale, missing.name()));
                 yield interpreted();
             }
         };
