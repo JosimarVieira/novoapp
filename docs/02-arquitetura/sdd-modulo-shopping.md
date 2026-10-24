@@ -2,7 +2,7 @@
 tipo: sdd
 modulo: shopping
 status: escrito
-atualizado_em: 2026-09-21
+atualizado_em: 2026-10-24
 adrs:
   - ADR-0003
   - ADR-0004
@@ -79,7 +79,7 @@ chegam prontos). Nenhuma chamada.
 
 ```
 shopping/
-  ShoppingService            -- addItems / markPurchased / removeItem /
+  ShoppingService            -- addItems / markPurchased / removeItems /
                                 checkout / reopenCheckout / pendingItems
   ExpenseReversedListener    -- o outro lado do desfazer (ADR-0032)
   ItemDraft                  -- (name, quantity, unit) -- o que veio da interpretacao
@@ -316,7 +316,7 @@ despesa?"), porque do ponto de vista de quem escreveu elas são a mesma situaç�
 
 ### Remover item (ADR-0039)
 
-`removeItem` marca `REMOVED`, grava `removed_by_member_id` e `removed_at`
+`removeItems` marca `REMOVED`, grava `removed_by_member_id` e `removed_at`
 (migration `V8`), e alcança só item `PENDING`. Não apaga a linha, pelo mesmo
 motivo que o estorno não apaga o lançamento.
 
@@ -330,6 +330,25 @@ da [ADR-0025](../01-adr/0025-desfazer-precedencia-e-escopo.md). O caminho de
 volta é avisar de novo, e ele funciona porque o índice único da
 [ADR-0030](../01-adr/0030-correspondencia-de-nome-por-forma-normalizada.md) só
 abrange `PENDING`.
+
+### Vários itens numa mensagem (2026-10-24)
+
+`markPurchased`, `removeItems` e `addAlreadyPurchased` recebem uma **lista** de
+nomes, como `addItems` sempre recebeu. Até aqui recebiam um nome só, e em uso
+real `Comprei ovos e sal` marcava os ovos e deixava o sal na lista, sem aviso
+(o porquê está no [SDD de `nlu`](sdd-modulo-nlu.md)).
+
+- **Uma transação para a mensagem inteira.** Falha no meio não deixa metade dela
+  gravada.
+- **Um desfecho por item**, na ordem em que a pessoa escreveu: `Purchased` ou
+  `NotOnTheList`, `Removed` ou `NotOnTheList`. O que não está na lista **não
+  impede** o que está — quem comprou ovos e feijão comprou os ovos, mesmo que
+  ninguém tenha pedido o feijão. Quem decide o que dizer sobre cada um é
+  `conversation`, como sempre: este módulo não pergunta nada (ADR-0018).
+- **Nome repetido conta uma vez**, pela forma normalizada
+  ([ADR-0030](../01-adr/0030-correspondencia-de-nome-por-forma-normalizada.md)).
+  Sem isso, `comprei arroz e arroz` devolveria o segundo como `NotOnTheList`,
+  porque o primeiro acabou de sair da lista.
 
 ## Gatilhos de revisão
 

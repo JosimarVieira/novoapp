@@ -45,14 +45,31 @@ class MistralToolCallRecoveryTest {
         assertThat(recovered.get().decimal(RegisterExpenseTool.AMOUNT_PARAMETER)).isEqualByComparingTo("20");
     }
 
+    /**
+     * O exemplo era <code>{"item": "Arroz"}</code> -> marcarItemComprado ate
+     * 2026-10-24, quando a tool passou a receber <code>itens</code>. Com isso
+     * ela tem os mesmos parametros de adicionarItemLista, e um JSON so com
+     * <code>itens</code> deixou de identificar uma tool unica -- o que ja era
+     * verdade em producao desde a Etapa 3, porque removerItemLista tinha os
+     * mesmos parametros de marcarItemComprado. O teste e sobre a prosa em volta,
+     * e nao sobre qual tool: o convite tem parametros so dele.
+     */
     @Test
     @DisplayName("JSON cercado de conversa ainda e recuperado")
     void recoversJsonSurroundedByProse() {
         Optional<ToolCall> recovered = MistralMessageInterpreter.recoverFromText(
-                "Claro! Aqui esta: {\"item\": \"Arroz\", \"confianca\": 1} -- espero ter ajudado.", TOOLS);
+                "Claro! Aqui esta: {\"nome\": \"Bruno\", \"telefone\": \"+5511999999999\", \"confianca\": 1}"
+                        + " -- espero ter ajudado.", TOOLS);
 
         assertThat(recovered).isPresent();
-        assertThat(recovered.get().toolName()).isEqualTo(MarkItemPurchasedTool.NAME);
+        assertThat(recovered.get().toolName()).isEqualTo(InviteMemberTool.NAME);
+    }
+
+    @Test
+    @DisplayName("lista de itens escrita como texto nao vira palpite entre adicionar e marcar")
+    void itemListWrittenAsTextIsAmbiguous() {
+        assertThat(MistralMessageInterpreter.recoverFromText(
+                "{\"itens\": [\"Arroz\"], \"confianca\": 1}", TOOLS)).isEmpty();
     }
 
     /**

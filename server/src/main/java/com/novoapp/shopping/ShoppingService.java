@@ -19,7 +19,9 @@ import jakarta.transaction.Transactional;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -101,52 +103,70 @@ public class ShoppingService {
         return result;
     }
 
+    /**
+     * Marca um ou varios itens -- "comprei ovos e sal" e uma mensagem so, como
+     * {@link #addItems}. Uma transacao para todos: falha no meio nao deixa
+     * metade da mensagem gravada.
+     *
+     * <p>Um desfecho por item, na ordem em que a pessoa escreveu. O que nao esta
+     * na lista nao impede o que esta: quem comprou ovos e sal comprou os ovos,
+     * mesmo que ninguem tenha pedido o sal.
+     */
     @Transactional
     @HouseholdScoped
-    public MarkPurchasedResult markPurchased(UUID householdId, UUID memberId, String itemName) {
+    public List<MarkPurchasedResult> markPurchased(UUID householdId, UUID memberId, List<String> itemNames) {
         Optional<ShoppingList> list = lists.findActive();
-        if (list.isEmpty()) {
-            return new MarkPurchasedResult.NotOnTheList(itemName);
+        List<MarkPurchasedResult> results = new ArrayList<>();
+
+        for (String itemName : distinctByNormalizedName(itemNames)) {
+            Optional<ListItem> found = list.flatMap(active -> items.findPendingByName(active.id, itemName));
+            if (found.isEmpty()) {
+                results.add(new MarkPurchasedResult.NotOnTheList(itemName));
+                continue;
+            }
+
+            ListItem item = found.get();
+            item.status = ListItemStatus.PURCHASED;
+            item.purchasedByMemberId = memberId;
+            item.purchasedAt = Instant.now(clock);
+            results.add(new MarkPurchasedResult.Purchased(item.name));
         }
 
-        Optional<ListItem> found = items.findPendingByName(list.get().id, itemName);
-        if (found.isEmpty()) {
-            return new MarkPurchasedResult.NotOnTheList(itemName);
-        }
-
-        ListItem item = found.get();
-        item.status = ListItemStatus.PURCHASED;
-        item.purchasedByMemberId = memberId;
-        item.purchasedAt = Instant.now(clock);
         items.flush();
-        return new MarkPurchasedResult.Purchased(item.name);
+        return results;
     }
 
     /**
-     * Registra como ja comprado um item que nunca esteve na lista -- o "sim" da
-     * pergunta do cenario "Item mencionado nao existe na lista". Entra direto
-     * como {@code PURCHASED}: nunca passou por {@code PENDING} porque ninguem
+     * Registra como ja comprados itens que nunca estiveram na lista -- o "sim" da
+     * pergunta do cenario "Item mencionado nao existe na lista". Entram direto
+     * como {@code PURCHASED}: nunca passaram por {@code PENDING} porque ninguem
      * chegou a pedir.
      */
     @Transactional
     @HouseholdScoped
-    public MarkPurchasedResult.Purchased addAlreadyPurchased(UUID householdId, UUID memberId,
-                                                             String itemName, UUID sourceMessageId) {
+    public List<MarkPurchasedResult.Purchased> addAlreadyPurchased(UUID householdId, UUID memberId,
+                                                                   List<String> itemNames,
+                                                                   UUID sourceMessageId) {
         ShoppingList list = activeListOrCreate(householdId);
+        List<MarkPurchasedResult.Purchased> result = new ArrayList<>();
 
-        ListItem item = new ListItem();
-        item.householdId = householdId;
-        item.shoppingListId = list.id;
-        item.name = itemName.trim();
-        item.nameNormalized = Normalization.of(itemName);
-        item.status = ListItemStatus.PURCHASED;
-        item.requestedByMemberId = memberId;
-        item.purchasedByMemberId = memberId;
-        item.purchasedAt = Instant.now(clock);
-        item.sourceMessageId = sourceMessageId;
-        items.persist(item);
+        for (String itemName : distinctByNormalizedName(itemNames)) {
+            ListItem item = new ListItem();
+            item.householdId = householdId;
+            item.shoppingListId = list.id;
+            item.name = itemName;
+            item.nameNormalized = Normalization.of(itemName);
+            item.status = ListItemStatus.PURCHASED;
+            item.requestedByMemberId = memberId;
+            item.purchasedByMemberId = memberId;
+            item.purchasedAt = Instant.now(clock);
+            item.sourceMessageId = sourceMessageId;
+            items.persist(item);
+            result.add(new MarkPurchasedResult.Purchased(item.name));
+        }
+
         items.flush();
-        return new MarkPurchasedResult.Purchased(item.name);
+        return result;
     }
 
     /**
@@ -242,7 +262,9 @@ public class ShoppingService {
     }
 
     /**
-     * Tira da lista o item que a familia desistiu de comprar (ADR-0039).
+     * Tira da lista os itens que a familia desistiu de comprar (ADR-0039) --
+     * um ou varios, numa transacao so e com um desfecho por item, como
+     * {@link #markPurchased}.
      *
      * <p>Marca <code>REMOVED</code> em vez de apagar a linha, pelo mesmo motivo
      * que o estorno nao apaga o lancamento: em lista compartilhada, "sumiu" e
@@ -255,23 +277,42 @@ public class ShoppingService {
      */
     @Transactional
     @HouseholdScoped
-    public RemoveItemResult removeItem(UUID householdId, UUID memberId, String itemName) {
+    public List<RemoveItemResult> removeItems(UUID householdId, UUID memberId, List<String> itemNames) {
         Optional<ShoppingList> list = lists.findActive();
-        if (list.isEmpty()) {
-            return new RemoveItemResult.NotOnTheList(itemName);
+        List<RemoveItemResult> results = new ArrayList<>();
+
+        for (String itemName : distinctByNormalizedName(itemNames)) {
+            Optional<ListItem> found = list.flatMap(active -> items.findPendingByName(active.id, itemName));
+            if (found.isEmpty()) {
+                results.add(new RemoveItemResult.NotOnTheList(itemName));
+                continue;
+            }
+
+            ListItem item = found.get();
+            item.status = ListItemStatus.REMOVED;
+            item.removedByMemberId = memberId;
+            item.removedAt = Instant.now(clock);
+            results.add(new RemoveItemResult.Removed(item.name));
         }
 
-        Optional<ListItem> found = items.findPendingByName(list.get().id, itemName);
-        if (found.isEmpty()) {
-            return new RemoveItemResult.NotOnTheList(itemName);
-        }
-
-        ListItem item = found.get();
-        item.status = ListItemStatus.REMOVED;
-        item.removedByMemberId = memberId;
-        item.removedAt = Instant.now(clock);
         items.flush();
-        return new RemoveItemResult.Removed(item.name);
+        return results;
+    }
+
+    /**
+     * Um nome por item, na ordem em que a pessoa escreveu, comparando pela forma
+     * normalizada (ADR-0030). "comprei arroz e arroz" e um arroz so: sem isto o
+     * segundo voltaria como "nao esta na lista", porque o primeiro acabou de
+     * sair dela.
+     */
+    private static List<String> distinctByNormalizedName(List<String> itemNames) {
+        Map<String, String> byNormalizedName = new LinkedHashMap<>();
+        for (String itemName : itemNames) {
+            if (itemName != null && !itemName.isBlank()) {
+                byNormalizedName.putIfAbsent(Normalization.of(itemName), itemName.trim());
+            }
+        }
+        return List.copyOf(byNormalizedName.values());
     }
 
     /**

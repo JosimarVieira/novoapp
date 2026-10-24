@@ -1,5 +1,7 @@
 package com.novoapp.conversation;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.novoapp.shopping.ItemDraft;
@@ -32,11 +34,18 @@ import java.util.UUID;
  *        <code>options_json</code> guarda so os rotulos, que e o que a tela da
  *        Etapa 4 mostra; os ids ficam aqui, que e onde a execucao os procura
  * @param items so em {@link DeferredAction#ADD_LIST_ITEMS}
- * @param itemNames so em {@link DeferredAction#CLOSE_PURCHASE}: os itens que a
- *        pessoa disse ter comprado. Vazio significa "comprei tudo", e e o mesmo
- *        contrato de {@code ShoppingService.checkout} -- por isso os nomes crus,
- *        e nao {@link ItemDraft}: fechar compra nao carrega quantidade nem
- *        unidade
+ * @param itemNames os nomes crus, e nao {@link ItemDraft}: marcar, remover e
+ *        fechar compra nao carregam quantidade nem unidade. Em
+ *        {@link DeferredAction#CLOSE_PURCHASE} vazio significa "comprei tudo",
+ *        o mesmo contrato de {@code ShoppingService.checkout}; em
+ *        {@link DeferredAction#MARK_PURCHASED},
+ *        {@link DeferredAction#ADD_ALREADY_PURCHASED} e
+ *        {@link DeferredAction#REMOVE_LIST_ITEM} nunca e vazio.
+ *        <p>Ate 2026-10-24 essas tres guardavam um item so, num campo
+ *        {@code itemName}. Pendencia gravada antes disso pode continuar aberta
+ *        na central de pendencias por tempo indeterminado (ADR-0018), entao o
+ *        JSON antigo continua sendo lido: {@code "itemName": "Arroz"} chega aqui
+ *        como uma lista de um item
  * @param memberName e {@code phoneNumber} so em
  *        {@link DeferredAction#INVITE_MEMBER}
  */
@@ -47,8 +56,9 @@ public record PendingIntent(PendingActionType type,
                             String suggestedCategory,
                             Long amountCents,
                             String description,
-                            String itemName,
                             List<ItemDraft> items,
+                            @JsonAlias("itemName")
+                            @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY)
                             List<String> itemNames,
                             String memberName,
                             String phoneNumber,
@@ -109,7 +119,7 @@ public record PendingIntent(PendingActionType type,
     public static PendingIntent createCategory(String suggestedCategory, Long amountCents,
                                                String description, UUID sourceMessageId) {
         return new PendingIntent(PendingActionType.CREATE_CATEGORY, DeferredAction.REGISTER_EXPENSE,
-                suggestedCategory, amountCents, description, null, null, null, null, null,
+                suggestedCategory, amountCents, description, null, null, null, null,
                 sourceMessageId, null);
     }
 
@@ -117,20 +127,20 @@ public record PendingIntent(PendingActionType type,
     public static PendingIntent chooseCategory(List<Option> options, Long amountCents,
                                                String description, UUID sourceMessageId) {
         return new PendingIntent(PendingActionType.CHOOSE_CATEGORY, DeferredAction.REGISTER_EXPENSE,
-                null, amountCents, description, null, null, null, null, null, sourceMessageId, options);
+                null, amountCents, description, null, null, null, null, sourceMessageId, options);
     }
 
     /** "Quanto foi?" -- categoria reconhecida, valor ausente. */
     public static PendingIntent askAmount(List<Option> categoryOption, String description,
                                           UUID sourceMessageId) {
         return new PendingIntent(PendingActionType.ASK_AMOUNT, DeferredAction.REGISTER_EXPENSE,
-                null, null, description, null, null, null, null, null, sourceMessageId, categoryOption);
+                null, null, description, null, null, null, null, sourceMessageId, categoryOption);
     }
 
-    /** "Nao achei 'Feijao' na lista. Registro como comprado?" */
-    public static PendingIntent confirmPurchase(String itemName, UUID sourceMessageId) {
+    /** "Nao achei 'Feijao' na lista. Registro como comprado?" -- um ou varios itens, uma pergunta so. */
+    public static PendingIntent confirmPurchase(List<String> itemNames, UUID sourceMessageId) {
         return new PendingIntent(PendingActionType.CONFIRM_PURCHASE, DeferredAction.ADD_ALREADY_PURCHASED,
-                null, null, null, itemName, null, null, null, null, sourceMessageId, null);
+                null, null, null, null, List.copyOf(itemNames), null, null, sourceMessageId, null);
     }
 
     // ------------------------------------------------------------------
@@ -141,20 +151,25 @@ public record PendingIntent(PendingActionType type,
     public static PendingIntent confirmExpense(Option category, Long amountCents,
                                                String description, UUID sourceMessageId) {
         return new PendingIntent(PendingActionType.CONFIRM_INTENT, DeferredAction.REGISTER_EXPENSE,
-                null, amountCents, description, null, null, null, null, null,
+                null, amountCents, description, null, null, null, null,
                 sourceMessageId, List.of(category));
     }
 
     /** "Anoto arroz e leite na lista?" */
     public static PendingIntent confirmListItems(List<ItemDraft> items, UUID sourceMessageId) {
         return new PendingIntent(PendingActionType.CONFIRM_INTENT, DeferredAction.ADD_LIST_ITEMS,
-                null, null, null, null, items, null, null, null, sourceMessageId, null);
+                null, null, null, items, null, null, null, sourceMessageId, null);
     }
 
-    /** "Marco 'Arroz' como comprado?" -- diferente de {@link #confirmPurchase}, que so existe fora da lista. */
-    public static PendingIntent confirmMarkPurchased(String itemName, UUID sourceMessageId) {
+    /**
+     * "Marco 'Arroz' e 'Leite' como comprados?" -- diferente de
+     * {@link #confirmPurchase}, que so existe fora da lista. Guarda a lista
+     * inteira: um "sim" que baixasse so o primeiro item seria o defeito de
+     * 2026-10-20 escondido atras de uma pergunta.
+     */
+    public static PendingIntent confirmMarkPurchased(List<String> itemNames, UUID sourceMessageId) {
         return new PendingIntent(PendingActionType.CONFIRM_INTENT, DeferredAction.MARK_PURCHASED,
-                null, null, null, itemName, null, null, null, null, sourceMessageId, null);
+                null, null, null, null, List.copyOf(itemNames), null, null, sourceMessageId, null);
     }
 
     /**
@@ -171,7 +186,7 @@ public record PendingIntent(PendingActionType type,
     public static PendingIntent askCheckoutAmount(Option category, List<String> itemNames,
                                                   UUID sourceMessageId) {
         return new PendingIntent(PendingActionType.ASK_AMOUNT, DeferredAction.CLOSE_PURCHASE,
-                null, null, null, null, null, itemNames, null, null,
+                null, null, null, null, itemNames, null, null,
                 sourceMessageId, List.of(category));
     }
 
@@ -179,20 +194,20 @@ public record PendingIntent(PendingActionType type,
     public static PendingIntent confirmCheckout(Option category, Long amountCents,
                                                 List<String> itemNames, UUID sourceMessageId) {
         return new PendingIntent(PendingActionType.CONFIRM_INTENT, DeferredAction.CLOSE_PURCHASE,
-                null, amountCents, null, null, null, itemNames, null, null,
+                null, amountCents, null, null, itemNames, null, null,
                 sourceMessageId, List.of(category));
     }
 
-    /** "Removo 'Chocolate' da lista?" -- confianca media (ADR-0039). */
-    public static PendingIntent confirmRemoveListItem(String itemName, UUID sourceMessageId) {
+    /** "Removo 'Chocolate' da lista?" -- confianca media (ADR-0039), um ou varios itens. */
+    public static PendingIntent confirmRemoveListItem(List<String> itemNames, UUID sourceMessageId) {
         return new PendingIntent(PendingActionType.CONFIRM_INTENT, DeferredAction.REMOVE_LIST_ITEM,
-                null, null, null, itemName, null, null, null, null, sourceMessageId, null);
+                null, null, null, null, List.copyOf(itemNames), null, null, sourceMessageId, null);
     }
 
     /** "Crio o convite para Bruno (+55...)?" -- o mais caro de errar, e o que menos podia executar no palpite. */
     public static PendingIntent confirmInvite(String memberName, String phoneNumber, UUID sourceMessageId) {
         return new PendingIntent(PendingActionType.CONFIRM_INTENT, DeferredAction.INVITE_MEMBER,
-                null, null, null, null, null, null, memberName, phoneNumber, sourceMessageId, null);
+                null, null, null, null, null, memberName, phoneNumber, sourceMessageId, null);
     }
 
     public List<Option> optionsOrEmpty() {
@@ -203,7 +218,11 @@ public record PendingIntent(PendingActionType type,
         return items == null ? List.of() : items;
     }
 
-    /** Vazio e ausente sao a mesma coisa: os dois significam "comprei tudo". */
+    /**
+     * Vazio e ausente sao a mesma coisa. Em {@link DeferredAction#CLOSE_PURCHASE}
+     * os dois significam "comprei tudo"; nas acoes de item avulso, pendencia que
+     * nao deveria existir.
+     */
     public List<String> itemNamesOrEmpty() {
         return itemNames == null ? List.of() : itemNames;
     }

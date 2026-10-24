@@ -22,6 +22,7 @@ import dev.langchain4j.exception.RateLimitException;
 import dev.langchain4j.exception.RetriableException;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
+import dev.langchain4j.model.chat.request.json.JsonArraySchema;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -33,6 +34,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -118,6 +120,9 @@ public class MistralMessageInterpreter implements MessageInterpreter {
      */
     private static final String FINGERPRINT_CATEGORY = "_";
 
+    /** O parametro <code>confianca</code> existe em toda tool, com o mesmo nome (ADR-0004). */
+    private static final String CONFIDENCE = RegisterExpenseTool.CONFIDENCE_PARAMETER;
+
     @Inject
     ChatModel chatModel;
 
@@ -157,10 +162,142 @@ public class MistralMessageInterpreter implements MessageInterpreter {
             return recoverFromText(response.aiMessage().text(), tools);
         }
 
-        // Uma tool so, mesmo que o modelo devolva varias: a mensagem e uma acao
-        // do usuario, e um recibo. "acabou arroz, leite e cafe" ja e um unico
-        // adicionarItemLista com tres itens, nao tres chamadas.
-        return parse(toolCalls.get(0));
+        return fromToolCalls(toolCalls, objectMapper, tools);
+    }
+
+    /**
+     * Das chamadas que o modelo devolveu ate uma intencao so: le cada uma e
+     * entrega o resultado a {@link #mergeIntoOne}.
+     *
+     * <p>Chamada da tool escolhida com argumento fora do schema derruba a
+     * mensagem inteira para "nao entendi", como a primeira chamada sempre
+     * derrubou. Junta-la sem a parte ilegivel perderia um item calado -- e o
+     * defeito que a juncao existe para consertar. Chamada ilegivel de outra
+     * tool seria descartada de qualquer jeito, e so fica no aviso de
+     * {@link #parse}.
+     */
+    static Optional<ToolCall> fromToolCalls(List<ToolExecutionRequest> requests, ObjectMapper mapper,
+                                            List<ToolSpecification> tools) {
+        String chosen = requests.get(0).name();
+        List<ToolCall> calls = new ArrayList<>();
+        for (ToolExecutionRequest request : requests) {
+            Optional<ToolCall> call = parse(request, mapper);
+            if (call.isPresent()) {
+                calls.add(call.get());
+            } else if (chosen.equals(request.name())) {
+                return Optional.empty();
+            }
+        }
+        return mergeIntoOne(calls, tools);
+    }
+
+    /**
+     * Uma intencao por mensagem, mesmo que o modelo devolva varias chamadas: a
+     * mensagem e uma acao do usuario, e um recibo (sdd-modulo-nlu.md).
+     *
+     * <p>Ate 2026-10-24 isto era {@code toolCalls.get(0)}, e o resto ia embora
+     * sem uma linha de log. Em uso real, em 2026-10-20, "Comprei ovos e sal"
+     * voltou como duas chamadas de marcarItemComprado, uma por item: o modelo
+     * acertou, e o sal ficou na lista. A regra continua sendo uma intencao so; o
+     * que mudou e o caminho ate ela.
+     * <ul>
+     *   <li>Chamadas <b>da mesma tool</b> viram uma, com as listas somadas na
+     *       ordem em que vieram -- quando a tool so tem lista e confianca, e nao
+     *       ha escalar para duas chamadas discordarem. A confianca e a menor
+     *       delas: juntar nao pode deixar a interpretacao mais segura do que a
+     *       parte mais duvidosa.</li>
+     *   <li>Chamada de <b>outra tool</b> continua descartada, agora com aviso no
+     *       log. O que fazer com "comprei o arroz e acabou o cafe" e decisao de
+     *       produto em aberto (DECISOES-ABERTAS #27); ate la vale o
+     *       comportamento de antes, so que visivel.</li>
+     *   <li>Varias chamadas de uma tool com escalar -- dois fecharCompra com
+     *       valores diferentes -- ficam com a primeira, tambem com aviso: somar
+     *       dinheiro que o modelo separou seria inventar valor.</li>
+     * </ul>
+     *
+     * <p>Mora no adaptador pelo mesmo motivo de {@link #recoverFromText}:
+     * chamada paralela e comportamento do provedor, e quem trocar de modelo leva
+     * o tratamento junto.
+     */
+    static Optional<ToolCall> mergeIntoOne(List<ToolCall> calls, List<ToolSpecification> tools) {
+        if (calls.isEmpty()) {
+            return Optional.empty();
+        }
+        ToolCall first = calls.get(0);
+        List<ToolCall> sameTool = calls.stream()
+                .filter(call -> call.toolName().equals(first.toolName()))
+                .toList();
+
+        List<String> dropped = calls.stream()
+                .map(ToolCall::toolName)
+                .filter(name -> !name.equals(first.toolName()))
+                .toList();
+        if (!dropped.isEmpty()) {
+            LOG.warnf("Modelo devolveu %d chamadas na mesma resposta; usada %s, descartadas %s",
+                    calls.size(), first.toolName(), dropped);
+        }
+        if (sameTool.size() == 1) {
+            return Optional.of(first);
+        }
+
+        boolean mergeable = tools.stream()
+                .filter(tool -> tool.name().equals(first.toolName()))
+                .findFirst()
+                .map(MistralMessageInterpreter::onlyListsAndConfidence)
+                .orElse(false);
+        if (!mergeable) {
+            LOG.warnf("Modelo devolveu %d chamadas de %s; so a primeira foi usada",
+                    sameTool.size(), first.toolName());
+            return Optional.of(first);
+        }
+
+        // Texto solto onde o schema pede lista ("itens": "Sal") entra como um
+        // item. E justamente o formato em que o modelo mandava um item por
+        // chamada ate o schema virar lista, e descarta-lo aqui traria o defeito
+        // de 2026-10-20 de volta por outra porta. Toda propriedade alem da
+        // confianca e lista nestas tools, entao escalar nenhum fica de fora.
+        Map<String, List<Object>> lists = new LinkedHashMap<>();
+        for (ToolCall call : sameTool) {
+            call.arguments().forEach((name, value) -> {
+                if (value instanceof List<?> items) {
+                    lists.computeIfAbsent(name, key -> new ArrayList<>()).addAll(items);
+                } else if (value != null && !name.equals(CONFIDENCE)) {
+                    lists.computeIfAbsent(name, key -> new ArrayList<>()).add(value);
+                }
+            });
+        }
+        Map<String, Object> merged = new LinkedHashMap<>(lists);
+        merged.put(CONFIDENCE, sameTool.stream()
+                .mapToDouble(MistralMessageInterpreter::confidenceOf)
+                .min()
+                .orElse(0.0d));
+
+        LOG.infof("Modelo devolveu %d chamadas de %s; juntadas numa so", sameTool.size(), first.toolName());
+        return Optional.of(new ToolCall(first.toolName(), merged));
+    }
+
+    /**
+     * Juntar so e seguro quando nao ha nada alem de listas e confianca: e o caso
+     * de adicionarItemLista, marcarItemComprado e removerItemLista. Decidido pelo
+     * schema, e nao por uma lista de nomes, para que tool nova entre ou fique de
+     * fora pelo que ela e.
+     */
+    private static boolean onlyListsAndConfidence(ToolSpecification tool) {
+        if (tool.parameters() == null || tool.parameters().properties() == null) {
+            return false;
+        }
+        return tool.parameters().properties().entrySet().stream()
+                .filter(property -> !property.getKey().equals(CONFIDENCE))
+                .allMatch(property -> property.getValue() instanceof JsonArraySchema);
+    }
+
+    /** A mesma leitura de NluService: ausente ou fora de 0..1 vale zero, nunca meio-termo. */
+    private static double confidenceOf(ToolCall call) {
+        Double confidence = call.number(CONFIDENCE);
+        if (confidence == null || confidence.isNaN() || confidence < 0.0d || confidence > 1.0d) {
+            return 0.0d;
+        }
+        return confidence;
     }
 
     /**
@@ -447,9 +584,9 @@ public class MistralMessageInterpreter implements MessageInterpreter {
         return tool.parameters().properties().keySet();
     }
 
-    private Optional<ToolCall> parse(ToolExecutionRequest call) {
+    private static Optional<ToolCall> parse(ToolExecutionRequest call, ObjectMapper mapper) {
         try {
-            Map<String, Object> arguments = objectMapper.readValue(call.arguments(),
+            Map<String, Object> arguments = mapper.readValue(call.arguments(),
                     new TypeReference<Map<String, Object>>() { });
             return Optional.of(new ToolCall(call.name(), arguments));
         } catch (Exception e) {

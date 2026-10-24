@@ -46,7 +46,9 @@ public enum MessageKey {
     CONFIRM_LIST_ITEMS_ONE("confirm.list.items.one"),
     CONFIRM_LIST_ITEMS_MANY("confirm.list.items.many"),
     CONFIRM_MARK_PURCHASED("confirm.mark.purchased"),
+    CONFIRM_MARK_PURCHASED_MANY("confirm.mark.purchased.many"),
     CONFIRM_REMOVE_ITEM("confirm.remove.item"),
+    CONFIRM_REMOVE_ITEM_MANY("confirm.remove.item.many"),
     CONFIRM_CHECKOUT("confirm.checkout"),
     CONFIRM_INVITE("confirm.invite"),
 
@@ -62,13 +64,17 @@ public enum MessageKey {
     LIST_ALREADY_PENDING("list.already.pending"),
     LIST_ALREADY_PENDING_BY("list.already.pending.by"),
     LIST_PURCHASED("list.purchased"),
+    LIST_PURCHASED_MANY("list.purchased.many"),
     LIST_PURCHASE_OFFER("list.purchase.offer"),
+    LIST_PURCHASE_OFFER_MANY("list.purchase.offer.many"),
     LIST_EMPTY("list.empty"),
     LIST_PENDING("list.pending"),
     LIST_ITEM_QUANTITY("list.item.quantity"),
     LIST_ITEM_QUANTITY_UNIT("list.item.quantity.unit"),
     LIST_REMOVED("list.removed"),
+    LIST_REMOVED_MANY("list.removed.many"),
     LIST_REMOVE_NOT_ON_THE_LIST("list.remove.not.on.the.list"),
+    LIST_REMOVE_NOT_ON_THE_LIST_MANY("list.remove.not.on.the.list.many"),
 
     // -------------------------------------------- o elo (ADR-0031, ADR-0032)
     CHECKOUT_RECEIPT_ONE("checkout.receipt.one"),

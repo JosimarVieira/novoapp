@@ -1,6 +1,7 @@
 package com.novoapp.nlu.tools;
 
 import dev.langchain4j.agent.tool.ToolSpecification;
+import dev.langchain4j.model.chat.request.json.JsonArraySchema;
 import dev.langchain4j.model.chat.request.json.JsonNumberSchema;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import dev.langchain4j.model.chat.request.json.JsonStringSchema;
@@ -21,11 +22,15 @@ import dev.langchain4j.model.chat.request.json.JsonStringSchema;
  *
  * <p>Nao mexe em dinheiro e nao e desfazivel pelo chat (ADR-0039): o caminho de
  * volta e avisar de novo que o item esta faltando.
+ *
+ * <p>Recebe uma lista desde 2026-10-24, pelo mesmo defeito de
+ * {@link MarkItemPurchasedTool}: com um item so no schema, "remover chocolate e
+ * nescau" so tinha como chegar em duas chamadas, e so a primeira era executada.
  */
 public final class RemoveListItemTool {
 
     public static final String NAME = "removerItemLista";
-    public static final String ITEM_PARAMETER = "item";
+    public static final String ITEMS_PARAMETER = "itens";
     public static final String CONFIDENCE_PARAMETER = "confianca";
 
     private RemoveListItemTool() {
@@ -34,16 +39,18 @@ public final class RemoveListItemTool {
     public static ToolSpecification specification() {
         return ToolSpecification.builder()
                 .name(NAME)
-                .description("Tira da lista de compras um item que a familia desistiu de comprar: "
+                .description("Tira da lista de compras itens que a familia desistiu de comprar: "
                         + "'remover chocolate', 'tirar o feijao da lista', 'apagar arroz', "
-                        + "'nao precisa mais do cafe'. NAO use quando a pessoa disser que JA "
-                        + "comprou -- isso e marcarItemComprado ou fecharCompra, e o status e "
-                        + "outro. Nao registra despesa.")
+                        + "'nao precisa mais do cafe', 'remover chocolate e nescau'. Chame uma vez "
+                        + "so, com todos os itens da mensagem na lista. NAO use quando a pessoa "
+                        + "disser que JA comprou -- isso e marcarItemComprado ou fecharCompra, e o "
+                        + "status e outro. Nao registra despesa.")
                 .parameters(JsonObjectSchema.builder()
-                        .addProperty(ITEM_PARAMETER, JsonStringSchema.builder()
-                                .description("Nome do produto que sai da lista, no singular e com inicial "
-                                        + "maiuscula. Se ele estiver entre os itens pendentes informados "
-                                        + "no contexto, use a grafia de la.")
+                        .addProperty(ITEMS_PARAMETER, JsonArraySchema.builder()
+                                .description("Os produtos que saem da lista, um por nome mencionado, no "
+                                        + "singular e com inicial maiuscula. Se eles estiverem entre os "
+                                        + "itens pendentes informados no contexto, use a grafia de la.")
+                                .items(JsonStringSchema.builder().build())
                                 .build())
                         .addProperty(CONFIDENCE_PARAMETER, JsonNumberSchema.builder()
                                 .description("De 0 a 1, o quanto voce tem certeza desta interpretacao. "
@@ -52,7 +59,7 @@ public final class RemoveListItemTool {
                                         + "esta claro se ela quer remover o item ou marca-lo como "
                                         + "comprado.")
                                 .build())
-                        .required(ITEM_PARAMETER, CONFIDENCE_PARAMETER)
+                        .required(ITEMS_PARAMETER, CONFIDENCE_PARAMETER)
                         .build())
                 .build();
     }
