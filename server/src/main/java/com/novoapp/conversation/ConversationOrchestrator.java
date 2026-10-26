@@ -27,6 +27,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -334,12 +335,18 @@ public class ConversationOrchestrator {
                         intent.sourceMessageId(), reply);
             }
             case ADD_LIST_ITEMS -> addItems(context, intent.itemsOrEmpty(), intent.sourceMessageId(), reply);
-            case MARK_PURCHASED -> markPurchased(context, intent.itemName(), intent.sourceMessageId(), reply);
+            case MARK_PURCHASED -> markPurchased(context, intent.itemNamesOrEmpty(), intent.sourceMessageId(), reply);
             case ADD_ALREADY_PURCHASED -> {
-                MarkPurchasedResult.Purchased purchased = shopping.addAlreadyPurchased(context.householdId(),
-                        context.memberId(), intent.itemName(), intent.sourceMessageId());
-                reply.send(receipts.purchasedReceipt(reply.locale, purchased.name()));
-                yield executed(json(Map.of("tool", "marcarItemComprado", "item", purchased.name())));
+                if (intent.itemNamesOrEmpty().isEmpty()) {
+                    LOG.warnf("Pendencia de item fora da lista sem item guardado: %s", intent);
+                    yield notUnderstood(reply, 0.0d);
+                }
+                List<String> purchased = shopping.addAlreadyPurchased(context.householdId(), context.memberId(),
+                                intent.itemNamesOrEmpty(), intent.sourceMessageId()).stream()
+                        .map(MarkPurchasedResult.Purchased::name)
+                        .toList();
+                reply.send(receipts.purchasedReceipt(reply.locale, purchased));
+                yield executed(json(Map.of("tool", "marcarItemComprado", "itens", purchased)));
             }
             case CLOSE_PURCHASE -> {
                 List<PendingIntent.Option> options = intent.optionsOrEmpty();
@@ -353,7 +360,7 @@ public class ConversationOrchestrator {
                 yield checkout(context, options.get(0), intent.itemNamesOrEmpty(), amountCents,
                         intent.sourceMessageId(), reply);
             }
-            case REMOVE_LIST_ITEM -> removeItem(context, intent.itemName(), reply);
+            case REMOVE_LIST_ITEM -> removeItems(context, intent.itemNamesOrEmpty(), reply);
             case INVITE_MEMBER -> issueInvite(context, intent.memberName(), intent.phoneNumber(), reply);
         };
     }
@@ -622,33 +629,56 @@ public class ConversationOrchestrator {
             return notUnderstood(reply, intent.confidence());
         }
         if (level == ConfidencePolicy.Level.MEDIUM) {
-            String question = receipts.confirmMarkPurchased(reply.locale, intent.itemName());
+            String question = receipts.confirmMarkPurchased(reply.locale, intent.itemNames());
             pendingActions.open(context,
-                    PendingIntent.confirmMarkPurchased(intent.itemName(), message.id()),
+                    PendingIntent.confirmMarkPurchased(intent.itemNames(), message.id()),
                     question, List.of());
             reply.send(question);
             return interpreted(intent.confidence());
         }
-        return markPurchased(context, intent.itemName(), message.id(), reply);
+        return markPurchased(context, intent.itemNames(), message.id(), reply);
     }
 
-    private ProcessingOutcome markPurchased(ResolvedContext context, String itemName,
+    /**
+     * Uma resposta so para a mensagem inteira, com quantos itens ela tiver.
+     *
+     * <p>O que estava na lista e marcado; o que nao estava vira a oferta do
+     * cenario "Item mencionado nao existe na lista", na mesma resposta. Marcar
+     * nao espera a pergunta: quem comprou ovos e feijao comprou os ovos, seja
+     * qual for a resposta sobre o feijao.
+     */
+    private ProcessingOutcome markPurchased(ResolvedContext context, List<String> itemNames,
                                             UUID sourceMessageId, Reply reply) {
-        MarkPurchasedResult result = shopping.markPurchased(context.householdId(), context.memberId(),
-                itemName);
-        return switch (result) {
-            case MarkPurchasedResult.Purchased purchased -> {
-                reply.send(receipts.purchasedReceipt(reply.locale, purchased.name()));
-                yield executed(json(Map.of("tool", "marcarItemComprado", "item", purchased.name())));
+        if (itemNames.isEmpty()) {
+            // NluService nao deixa chegar aqui vazio; pendencia sem item guardado
+            // tambem nao deveria existir. Nao entendi e melhor que um recibo vazio.
+            LOG.warnf("Marcar comprado sem item nenhum, mensagem %s", sourceMessageId);
+            return notUnderstood(reply, 0.0d);
+        }
+
+        List<String> purchased = new ArrayList<>();
+        List<String> missing = new ArrayList<>();
+        for (MarkPurchasedResult result : shopping.markPurchased(context.householdId(), context.memberId(),
+                itemNames)) {
+            switch (result) {
+                case MarkPurchasedResult.Purchased item -> purchased.add(item.name());
+                case MarkPurchasedResult.NotOnTheList item -> missing.add(item.name());
             }
-            case MarkPurchasedResult.NotOnTheList missing -> {
-                String question = receipts.offerPurchaseOfUnlistedItem(reply.locale, missing.name());
-                pendingActions.open(context,
-                        PendingIntent.confirmPurchase(missing.name(), sourceMessageId), question, List.of());
-                reply.send(question);
-                yield interpreted();
-            }
-        };
+        }
+
+        String receipt = purchased.isEmpty() ? null : receipts.purchasedReceipt(reply.locale, purchased);
+        if (missing.isEmpty()) {
+            reply.send(receipt);
+        } else {
+            String question = receipts.offerPurchaseOfUnlistedItems(reply.locale, missing);
+            pendingActions.open(context, PendingIntent.confirmPurchase(missing, sourceMessageId),
+                    question, List.of());
+            reply.send(receipt == null ? question : receipts.joined(receipt, question));
+        }
+
+        return purchased.isEmpty()
+                ? interpreted()
+                : executed(json(Map.of("tool", "marcarItemComprado", "itens", purchased)));
     }
 
     // ------------------------------------------------------------------
@@ -769,34 +799,46 @@ public class ConversationOrchestrator {
             return notUnderstood(reply, intent.confidence());
         }
         if (level == ConfidencePolicy.Level.MEDIUM) {
-            String question = receipts.confirmRemoveListItem(reply.locale, intent.itemName());
+            String question = receipts.confirmRemoveListItem(reply.locale, intent.itemNames());
             pendingActions.open(context,
-                    PendingIntent.confirmRemoveListItem(intent.itemName(), message.id()),
+                    PendingIntent.confirmRemoveListItem(intent.itemNames(), message.id()),
                     question, List.of());
             reply.send(question);
             return interpreted(intent.confidence());
         }
-        return removeItem(context, intent.itemName(), reply);
+        return removeItems(context, intent.itemNames(), reply);
     }
 
     /**
      * Item que nao esta na lista nao vira pergunta aqui (ADR-0039), diferente de
      * {@link #markPurchased}: comprar algo fora da lista e caso legitimo e tem
-     * oferta propria; remover o que nao esta la nao tem segunda leitura util.
+     * oferta propria; remover o que nao esta la nao tem segunda leitura util. Com
+     * varios itens, o aviso vai na mesma resposta do recibo.
      */
-    private ProcessingOutcome removeItem(ResolvedContext context, String itemName, Reply reply) {
-        RemoveItemResult result = shopping.removeItem(context.householdId(), context.memberId(),
-                itemName);
-        return switch (result) {
-            case RemoveItemResult.Removed removed -> {
-                reply.send(receipts.removedReceipt(reply.locale, removed.name()));
-                yield executed(json(Map.of("tool", "removerItemLista", "item", removed.name())));
+    private ProcessingOutcome removeItems(ResolvedContext context, List<String> itemNames, Reply reply) {
+        if (itemNames.isEmpty()) {
+            LOG.warn("Remover da lista sem item nenhum");
+            return notUnderstood(reply, 0.0d);
+        }
+
+        List<String> removed = new ArrayList<>();
+        List<String> missing = new ArrayList<>();
+        for (RemoveItemResult result : shopping.removeItems(context.householdId(), context.memberId(),
+                itemNames)) {
+            switch (result) {
+                case RemoveItemResult.Removed item -> removed.add(item.name());
+                case RemoveItemResult.NotOnTheList item -> missing.add(item.name());
             }
-            case RemoveItemResult.NotOnTheList missing -> {
-                reply.send(receipts.removeItemNotOnTheList(reply.locale, missing.name()));
-                yield interpreted();
-            }
-        };
+        }
+
+        String notOnTheList = missing.isEmpty() ? null : receipts.removeItemsNotOnTheList(reply.locale, missing);
+        if (removed.isEmpty()) {
+            reply.send(notOnTheList);
+            return interpreted();
+        }
+        String receipt = receipts.removedReceipt(reply.locale, removed);
+        reply.send(notOnTheList == null ? receipt : receipts.joined(receipt, notOnTheList));
+        return executed(json(Map.of("tool", "removerItemLista", "itens", removed)));
     }
 
     /**

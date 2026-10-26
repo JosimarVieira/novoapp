@@ -257,7 +257,7 @@ public class StubMessageInterpreter implements MessageInterpreter {
         String removed = stripPrefix(original, normalized, REMOVE_PREFIXES);
         if (removed != null) {
             return Optional.of(new ToolCall(RemoveListItemTool.NAME, Map.of(
-                    RemoveListItemTool.ITEM_PARAMETER, titleCase(stripArticle(removed)),
+                    RemoveListItemTool.ITEMS_PARAMETER, namedItems(removed),
                     RemoveListItemTool.CONFIDENCE_PARAMETER, CERTAIN)));
         }
         String purchased = stripPrefix(original, normalized, PURCHASED_PREFIXES);
@@ -389,18 +389,26 @@ public class StubMessageInterpreter implements MessageInterpreter {
 
         List<String> items = EVERYTHING.contains(normalize(named)) || named.isBlank()
                 ? List.of()
-                : java.util.Arrays.stream(named.split(",| e "))
-                        .map(part -> titleCase(stripArticle(part.trim())))
-                        .filter(part -> !part.isBlank())
-                        .toList();
+                : namedItems(named);
 
         if (amountInReais == null && !items.isEmpty()) {
-            // Sem valor e com item nomeado: continua sendo so baixar o item.
+            // Sem valor e com item nomeado: continua sendo so baixar os itens --
+            // todos, numa chamada so. Ate 2026-10-24 isto devolvia items.get(0), o
+            // espelho exato do defeito de producao: o stub ja separava os itens e
+            // jogava fora todos menos o primeiro.
             return Optional.of(new ToolCall(MarkItemPurchasedTool.NAME, Map.of(
-                    MarkItemPurchasedTool.ITEM_PARAMETER, items.get(0),
+                    MarkItemPurchasedTool.ITEMS_PARAMETER, items,
                     MarkItemPurchasedTool.CONFIDENCE_PARAMETER, CERTAIN)));
         }
         return checkout(items, amountInReais, categoryNames);
+    }
+
+    /** "ovos e sal", "arroz, leite e cafe" -> um nome por item, sem artigo. */
+    private List<String> namedItems(String named) {
+        return java.util.Arrays.stream(named.split(",| e "))
+                .map(part -> titleCase(stripArticle(part.trim())))
+                .filter(part -> !part.isBlank())
+                .toList();
     }
 
     private Optional<ToolCall> checkout(List<String> items, BigDecimal amountInReais,

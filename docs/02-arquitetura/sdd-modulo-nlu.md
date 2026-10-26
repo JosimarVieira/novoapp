@@ -2,7 +2,7 @@
 tipo: sdd
 modulo: nlu
 status: escrito
-atualizado_em: 2026-09-19
+atualizado_em: 2026-10-24
 adrs:
   - ADR-0004
   - ADR-0009
@@ -233,9 +233,13 @@ tem nome.
    de inventar uma (ADR-0004) — a assimetria é deliberada.
 5. O adaptador devolve `ToolCall` cru; `NluService` traduz em `Intent` tipada,
    resolvendo nome de categoria para id.
-6. Uma tool só por mensagem, mesmo que o modelo devolva várias: uma mensagem é
-   uma ação e um recibo. "acabou arroz, leite e café" já é um único
-   `adicionarItemLista` com três itens.
+6. Uma intenção só por mensagem, mesmo que o modelo devolva várias chamadas:
+   uma mensagem é uma ação e um recibo. "acabou arroz, leite e café" já é um
+   único `adicionarItemLista` com três itens — e, desde 2026-10-24, "comprei
+   ovos e sal" é um único `marcarItemComprado` com dois, e "remover chocolate e
+   nescau" um único `removerItemLista`. O que o adaptador faz quando o modelo
+   devolve várias chamadas assim mesmo está na seção "Várias chamadas numa
+   resposta", abaixo.
 
 ### O rótulo do enum de categoria
 
@@ -394,6 +398,51 @@ formalidade: tool de fora não quebra nada — o hash continua estável e
 formato, não cobertura. O que some em silêncio é exatamente o que a
 [ADR-0036](../01-adr/0036-instrumento-de-medicao-da-etapa-5.md) quer detectar:
 mudança na descrição de um parâmetro daquela tool.
+
+## Várias chamadas numa resposta (2026-10-24)
+
+Em uso real, em 2026-10-20, `Comprei ovos e sal` voltou do Mistral como **duas**
+chamadas de `marcarItemComprado`, uma por item, as duas com confiança 1. O
+mesmo aconteceu com `Já comprei / Filtro café / Colorau`. O modelo acertou: com
+`item` sendo um texto só, duas chamadas eram a única forma de o schema dizer
+dois itens. O adaptador ficava com a primeira (`toolCalls.get(0)`) e descartava
+o resto sem uma linha de log. O segundo item continuava na lista, o recibo
+citava só o primeiro, e nada no banco registrava o descarte — `intent_json` é
+escrito depois da execução. A prova só existia no log de resposta do cliente
+Mistral (`log-responses`).
+
+Duas mudanças, e as duas são necessárias:
+
+- **`marcarItemComprado` e `removerItemLista` recebem `itens` (lista)**, como
+  `adicionarItemLista` sempre recebeu. É o conserto de verdade: o modelo deixa
+  de precisar de uma chamada por item. As descrições pedem "uma vez só, com
+  todos os itens".
+- **O adaptador junta chamadas da mesma tool** (`mergeIntoOne`), porque schema
+  não obriga o modelo a nada. Junta só quando a tool não tem nada além de listas
+  e `confianca` — decidido pelo schema, não por lista de nomes —, somando as
+  listas na ordem em que vieram. A confiança da junção é a **menor** delas:
+  juntar não pode deixar a interpretação mais segura do que a parte mais
+  duvidosa. Tool com escalar (`fecharCompra`, `registrarDespesa`) fica com a
+  primeira chamada e um aviso no log: somar dois valores que o modelo separou
+  seria inventar dinheiro
+  ([ADR-0034](../01-adr/0034-valor-so-vale-se-a-pessoa-escreveu-digito.md)).
+
+**Schema não obriga o modelo, então a leitura é tolerante onde perder item é o
+risco.** Na junção, `itens` escrito como texto (`"Sal"`, o formato antigo)
+entra como um item, em vez de sumir. Em `NluService`, o mesmo texto solto vira
+lista de um, objeto no formato de `adicionarItemLista` (`{"nome": "Ovos"}`)
+vale pelo nome, e nome repetido conta uma vez. Chamada da tool escolhida com
+argumento ilegível derruba a mensagem para "não entendi", como sempre derrubou:
+juntar o resto perderia um item calado.
+
+**Chamada de outra tool continua descartada**, agora com `WARN` no log em vez de
+silêncio. `comprei o arroz e acabou o café` é marcar **e** adicionar numa
+mensagem só, e o que fazer com isso é decisão de produto em aberto
+([DECISOES-ABERTAS #27](../DECISOES-ABERTAS.md)).
+
+A mudança de descrição altera o `prompt_version`
+([ADR-0035](../01-adr/0035-o-que-a-etapa-5-mede.md)), e é para isso que ele
+existe: o corpus da Etapa 5 separa sozinho as mensagens de antes e de depois.
 
 ## Gatilhos de revisão
 

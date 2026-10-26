@@ -3,6 +3,10 @@
 # Tag no nivel da Funcionalidade: os nove cenarios daqui sao todos da mesma
 # etapa, entao a tag e herdada em vez de repetida linha a linha. Diferente de
 # financas e vinculo, que sao mistos e precisam de tag por cenario.
+#
+# Deixou de ser verdade: o arquivo tem hoje cenarios @saneamento e @etapa3, que
+# herdam o @etapa2 daqui e sao excluidos do portao da Etapa 2a pelo runner
+# (Etapa2AcceptanceTest). A contagem atual fica em 03-specs/README.md.
 @etapa2
 Funcionalidade: Lista de compras compartilhada por chat
   Como membro de um household
@@ -113,3 +117,66 @@ Funcionalidade: Lista de compras compartilhada por chat
     Quando "Ana" envia "acabou o chocolate"
     Então a lista continua com um único item "Chocolate" pendente
     E "Ana" recebe um recibo confirmando o item "Chocolate"
+
+  # Uso real, 2026-10-20: "Comprei ovos e sal" voltou do modelo como DUAS
+  # chamadas de marcarItemComprado, uma por item, ambas com confiança 1 -- e só
+  # a primeira era executada. O sal continuava na lista, o recibo citava só os
+  # ovos, e nada avisava que o segundo item tinha ficado para trás. A mesma
+  # coisa com "Já comprei / Filtro café / Colorau". Marcar recebia um item só
+  # desde a Etapa 2a, e remover desde que nasceu, na Etapa 3; adicionar sempre
+  # recebeu a lista.
+  #
+  # @saneamento, e não @etapa2 nem @etapa3: é uso real depois de as duas etapas
+  # estarem fechadas (03-specs/README.md, "Sobre as tags").
+  @saneamento
+  Cenário: Marcar vários itens como comprados em uma mensagem
+    Dado que os itens "Ovos", "Sal" e "Café" estão pendentes
+    Quando "Bruno" envia "comprei ovos e sal"
+    Então os itens "Ovos" e "Sal" ficam com status comprado, registrados por "Bruno"
+    E o item "Café" continua pendente
+    E nenhum lançamento financeiro é criado
+    E "Bruno" recebe um único recibo citando "Ovos" e "Sal"
+
+  @saneamento
+  Cenário: Remover vários itens em uma mensagem
+    Dado que os itens "Arroz", "Chocolate" e "Nescau" estão pendentes
+    Quando "Bruno" envia "remover chocolate e nescau"
+    Então os itens "Chocolate" e "Nescau" saem da lista de pendentes
+    E o item "Arroz" continua pendente
+    E nenhum item é marcado como comprado
+    E "Bruno" recebe um único recibo citando "Chocolate" e "Nescau"
+
+  # O item que está na lista é marcado mesmo assim: o que não estava não
+  # bloqueia o que estava. O que não estava recebe a mesma oferta do cenário
+  # "Item mencionado não existe na lista", na mesma resposta -- uma pergunta só.
+  @saneamento
+  Cenário: Um dos itens comprados não está na lista
+    Dado que apenas o item "Ovos" está pendente
+    Quando "Bruno" envia "comprei ovos e feijão"
+    Então o item "Ovos" fica com status comprado, registrado por "Bruno"
+    E "Bruno" recebe uma pergunta oferecendo registrar "Feijão" como comprado
+    E "Bruno" recebe um único recibo citando "Ovos" e "Feijão"
+
+  # Remover o que não está na lista não vira pergunta (ADR-0039), nem quando
+  # vem junto de um item que está.
+  @saneamento
+  Cenário: Um dos itens a remover não está na lista
+    Dado que os itens "Arroz" e "Chocolate" estão pendentes
+    Quando "Bruno" envia "remover chocolate e feijão"
+    Então o item "Chocolate" sai da lista de pendentes
+    E o item "Arroz" continua pendente
+    E "Bruno" é informado de que "Feijão" não está na lista
+    E "Bruno" recebe um único recibo citando "Chocolate" e "Feijão"
+
+  # Confiança média não executa (ADR-0029), e a pendência tem de guardar a
+  # lista inteira: um "sim" que baixasse só o primeiro item seria o mesmo
+  # defeito, escondido atrás de uma pergunta.
+  @saneamento
+  Cenário: Confirmar vários itens comprados quando a interpretação é incerta
+    Dado que os itens "Ovos", "Sal" e "Café" estão pendentes
+    Quando "Bruno" envia "acho que comprei ovos e sal"
+    Então nenhum item é marcado como comprado
+    E "Bruno" recebe uma pergunta de confirmação citando "Ovos" e "Sal"
+    Quando "Bruno" responde "sim"
+    Então os itens "Ovos" e "Sal" ficam com status comprado, registrados por "Bruno"
+    E o item "Café" continua pendente

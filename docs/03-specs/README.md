@@ -17,8 +17,8 @@ Aqui ficam só o mapa e o estado.
 | Feature | Cobre | Cenários | Etapa |
 |---|---|---|---|
 | [`financas-lancamento-por-chat`](features/financas-lancamento-por-chat.feature) | Despesa por mensagem curta: categoria reconhecida, variações de escrita, categoria inexistente, ambiguidade, valor ausente, descrição, desfazer, reentrega, número não vinculado, mais o que o saneamento e o uso real acrescentaram (confiança média, mensagem nova sobre pendência aberta, acento na categoria-pai, valor inventado, resposta pelo nome da opção) | 26 | 4 `@etapa1`, 12 `@etapa2`, 10 `@saneamento` |
-| [`mercado-lista-de-compras`](features/mercado-lista-de-compras.feature) | Lista compartilhada: adicionar por linguagem natural, quantidade, item repetido, "o que está faltando?", marcar comprado, item escrito sem acento, reentrega | 10 | 9 `@etapa2`, 1 `@saneamento` |
-| [`elo-fechamento-de-compra`](features/elo-fechamento-de-compra.feature) | O elo lista→despesa: fechar tudo ou em partes, falha atômica, desfazer dos dois lados, fechar sem lista ativa, reentrega | 9 | 9 `@etapa3` |
+| [`mercado-lista-de-compras`](features/mercado-lista-de-compras.feature) | Lista compartilhada: adicionar por linguagem natural, quantidade, item repetido, "o que está faltando?", marcar comprado, item escrito sem acento, reentrega, remover item, e vários itens numa mensagem só ao marcar e ao remover | 18 | 9 `@etapa2`, 3 `@etapa3`, 6 `@saneamento` |
+| [`elo-fechamento-de-compra`](features/elo-fechamento-de-compra.feature) | O elo lista→despesa: fechar tudo ou em partes, falha atômica, desfazer dos dois lados, fechar sem lista ativa, reentrega, item com valor na mesma mensagem (`açúcar 20`) | 11 | 11 `@etapa3` |
 | [`vinculo-de-identidade`](features/vinculo-de-identidade.feature) | Onboarding: primeiro contato cria a própria família; convite entra em família existente; telefone errado, convite expirado, convite reusado, pessoa em duas famílias, convite com confiança média | 11 | 9 `@etapa1`, 1 `@etapa2`, 1 `@saneamento` |
 
 **Não escrita**: tarefas/agenda. É o primeiro trabalho da Etapa 2b, que
@@ -65,6 +65,16 @@ visível na própria suíte.
 > `@saneamento`, criada em 2026-09-16. Recontadas a partir dos próprios
 > arquivos. É registro que deixou de ser verdade, corrigido no próprio
 > documento (`CLAUDE.md`, "Superar e corrigir são coisas diferentes").
+>
+> **Correção de registro — 2026-10-24.** De novo: a Etapa 3 acrescentou dois
+> cenários ao elo ([ADR-0038](../01-adr/0038-item-com-valor-e-fechamento-parcial.md))
+> e três `@etapa3` a `mercado-lista-de-compras`
+> ([ADR-0039](../01-adr/0039-remover-item-da-lista.md)), e a tabela continuou
+> em 9 e 10. Recontadas a partir dos arquivos, já com os cinco `@saneamento`
+> de vários itens numa mensagem, abertos no mesmo dia. O parágrafo sobre o
+> `@Disabled` do `Etapa3AcceptanceTest`, logo acima, também deixou de ser
+> verdade em 2026-09-21, quando a Etapa 3 fechou e a suíte passou a integrar o
+> portão do CI.
 
 ## Onde ler o resto
 

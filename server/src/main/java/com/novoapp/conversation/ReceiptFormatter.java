@@ -138,13 +138,13 @@ public class ReceiptFormatter {
         return header + Messages.get(locale, MessageKey.CONFIRM_FOOTER);
     }
 
-    public String confirmMarkPurchased(Locale locale, String itemName) {
-        return Messages.get(locale, MessageKey.CONFIRM_MARK_PURCHASED, itemName)
+    public String confirmMarkPurchased(Locale locale, List<String> names) {
+        return oneOrMany(locale, names, MessageKey.CONFIRM_MARK_PURCHASED, MessageKey.CONFIRM_MARK_PURCHASED_MANY)
                 + Messages.get(locale, MessageKey.CONFIRM_FOOTER);
     }
 
-    public String confirmRemoveListItem(Locale locale, String itemName) {
-        return Messages.get(locale, MessageKey.CONFIRM_REMOVE_ITEM, itemName)
+    public String confirmRemoveListItem(Locale locale, List<String> names) {
+        return oneOrMany(locale, names, MessageKey.CONFIRM_REMOVE_ITEM, MessageKey.CONFIRM_REMOVE_ITEM_MANY)
                 + Messages.get(locale, MessageKey.CONFIRM_FOOTER);
     }
 
@@ -274,26 +274,36 @@ public class ReceiptFormatter {
         return receipt.toString();
     }
 
-    public String purchasedReceipt(Locale locale, String itemName) {
-        return Messages.get(locale, MessageKey.LIST_PURCHASED, itemName);
+    public String purchasedReceipt(Locale locale, List<String> names) {
+        return oneOrMany(locale, names, MessageKey.LIST_PURCHASED, MessageKey.LIST_PURCHASED_MANY);
     }
 
-    /** Cenario "Item mencionado nao existe na lista": pergunta, nunca erro. */
-    public String offerPurchaseOfUnlistedItem(Locale locale, String itemName) {
-        return Messages.get(locale, MessageKey.LIST_PURCHASE_OFFER, itemName);
+    /** Cenario "Item mencionado nao existe na lista": pergunta, nunca erro -- uma so, com todos os itens. */
+    public String offerPurchaseOfUnlistedItems(Locale locale, List<String> names) {
+        return oneOrMany(locale, names, MessageKey.LIST_PURCHASE_OFFER, MessageKey.LIST_PURCHASE_OFFER_MANY);
     }
 
-    public String removedReceipt(Locale locale, String itemName) {
-        return Messages.get(locale, MessageKey.LIST_REMOVED, itemName);
+    public String removedReceipt(Locale locale, List<String> names) {
+        return oneOrMany(locale, names, MessageKey.LIST_REMOVED, MessageKey.LIST_REMOVED_MANY);
     }
 
     /**
      * ADR-0039: remover o que nao esta la nao vira pergunta -- nao ha o que
-     * oferecer. Diferente de {@link #offerPurchaseOfUnlistedItem}, que oferece,
+     * oferecer. Diferente de {@link #offerPurchaseOfUnlistedItems}, que oferece,
      * porque comprar algo fora da lista e caso legitimo.
      */
-    public String removeItemNotOnTheList(Locale locale, String itemName) {
-        return Messages.get(locale, MessageKey.LIST_REMOVE_NOT_ON_THE_LIST, itemName);
+    public String removeItemsNotOnTheList(Locale locale, List<String> names) {
+        return oneOrMany(locale, names, MessageKey.LIST_REMOVE_NOT_ON_THE_LIST,
+                MessageKey.LIST_REMOVE_NOT_ON_THE_LIST_MANY);
+    }
+
+    /**
+     * Recibo e pergunta na mesma resposta: "comprei ovos e feijao" com o feijao
+     * fora da lista marca os ovos <b>e</b> pergunta pelo feijao. Duas mensagens
+     * do bot para uma da pessoa seriam dois recibos para uma acao so.
+     */
+    public String joined(String first, String second) {
+        return first + "\n\n" + second;
     }
 
     // ------------------------------------------------------------------
@@ -419,6 +429,13 @@ public class ReceiptFormatter {
             lines.add(Messages.get(locale, MessageKey.OPTION_LINE, index + 1, options.get(index)));
         }
         return String.join("\n", lines);
+    }
+
+    /** Um item no corpo da frase; varios, um por linha -- o mesmo par de {@link #confirmListItems}. */
+    private String oneOrMany(Locale locale, List<String> names, MessageKey one, MessageKey many) {
+        return names.size() == 1
+                ? Messages.get(locale, one, names.get(0))
+                : Messages.get(locale, many, bulleted(locale, names));
     }
 
     private String bulleted(Locale locale, List<String> items) {

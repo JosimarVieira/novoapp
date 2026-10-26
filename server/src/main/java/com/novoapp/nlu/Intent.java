@@ -62,7 +62,16 @@ public sealed interface Intent {
     record AddListItems(List<ItemDraft> items, double confidence) implements Intent {
     }
 
-    record MarkItemPurchased(String itemName, double confidence) implements Intent {
+    /**
+     * "comprei ovos e sal" -- um ou varios itens, numa mensagem so, como
+     * {@link AddListItems}. Lista desde 2026-10-24: com um item so, o segundo
+     * item de uma mensagem nao tinha onde caber, e sumia.
+     *
+     * @param itemNames nunca vazio. Diferente de {@link ClosePurchase}, aqui
+     *        vazio nao significa "tudo": marcar nao fecha a lista, e uma chamada
+     *        sem item nenhum vira {@link Unknown} em <code>NluService</code>
+     */
+    record MarkItemPurchased(List<String> itemNames, double confidence) implements Intent {
     }
 
     /**
@@ -95,8 +104,13 @@ public sealed interface Intent {
         }
     }
 
-    /** "remover chocolate" -- a familia desistiu de comprar (ADR-0039). */
-    record RemoveListItem(String itemName, double confidence) implements Intent {
+    /**
+     * "remover chocolate" -- a familia desistiu de comprar (ADR-0039). Um ou
+     * varios itens, pelo mesmo motivo de {@link MarkItemPurchased}.
+     *
+     * @param itemNames nunca vazio
+     */
+    record RemoveListItem(List<String> itemNames, double confidence) implements Intent {
     }
 
     record QueryList(double confidence) implements Intent {

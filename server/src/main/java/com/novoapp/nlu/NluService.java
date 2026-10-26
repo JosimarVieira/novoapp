@@ -20,6 +20,7 @@ import jakarta.inject.Inject;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -233,12 +234,17 @@ public class NluService {
         return new Intent.AddListItems(drafts, confidenceOf(call, AddListItemTool.CONFIDENCE_PARAMETER));
     }
 
+    /**
+     * Sem item nenhum nao ha o que marcar, e vira confianca baixa -- diferente de
+     * {@link #closePurchase}, onde lista vazia e "comprei tudo". Marcar nao fecha
+     * a lista, entao vazio aqui nao tem leitura que valha um palpite.
+     */
     private Intent markItemPurchased(ToolCall call) {
-        String item = call.text(MarkItemPurchasedTool.ITEM_PARAMETER);
-        if (item == null) {
+        List<String> items = itemNamesOf(call, MarkItemPurchasedTool.ITEMS_PARAMETER);
+        if (items.isEmpty()) {
             return Intent.unknown();
         }
-        return new Intent.MarkItemPurchased(item,
+        return new Intent.MarkItemPurchased(items,
                 confidenceOf(call, MarkItemPurchasedTool.CONFIDENCE_PARAMETER));
     }
 
@@ -282,12 +288,51 @@ public class NluService {
     }
 
     private Intent removeListItem(ToolCall call) {
-        String item = call.text(RemoveListItemTool.ITEM_PARAMETER);
-        if (item == null) {
+        List<String> items = itemNamesOf(call, RemoveListItemTool.ITEMS_PARAMETER);
+        if (items.isEmpty()) {
             return Intent.unknown();
         }
-        return new Intent.RemoveListItem(item,
+        return new Intent.RemoveListItem(items,
                 confidenceOf(call, RemoveListItemTool.CONFIDENCE_PARAMETER));
+    }
+
+    /**
+     * Os nomes de marcarItemComprado e removerItemLista. O schema pede lista de
+     * texto, e o modelo nem sempre obedece -- o Mistral nao valida a resposta
+     * contra o schema. Tres desvios viram o que a pessoa quis, e nao
+     * "nao entendi":
+     * <ul>
+     *   <li>texto solto ({@code "itens": "Sal"}) e uma lista de um: era o
+     *       formato destas tools ate 2026-10-24, e o modelo pode insistir
+     *       nele;</li>
+     *   <li>objeto no formato de adicionarItemLista ({@code {"nome": "Ovos"}})
+     *       vale pelo nome. As tres tools chamam o parametro de
+     *       <code>itens</code>, e sem isto o item virava o texto
+     *       "{nome=Ovos}";</li>
+     *   <li>nome repetido conta uma vez, pela forma normalizada (ADR-0030), na
+     *       ordem em que apareceu. Duas chamadas juntadas podem repetir um item,
+     *       e a pergunta de confirmacao nao pode lista-lo duas vezes.</li>
+     * </ul>
+     *
+     * <p>Fica aqui, e nao em {@link ToolCall#strings}: la lista vazia significa
+     * "comprei tudo" para fecharCompra, e afrouxar a leitura mudaria o elo.
+     */
+    static List<String> itemNamesOf(ToolCall call, String parameter) {
+        Object value = call.arguments().get(parameter);
+        List<?> raw = value instanceof List<?> list ? list : value == null ? List.of() : List.of(value);
+
+        Map<String, String> byNormalizedName = new LinkedHashMap<>();
+        for (Object item : raw) {
+            Object name = item instanceof Map<?, ?> object ? object.get(AddListItemTool.ITEM_NAME_PARAMETER) : item;
+            if (name == null || name instanceof Map<?, ?> || name instanceof List<?>) {
+                continue;
+            }
+            String text = String.valueOf(name).trim();
+            if (!text.isEmpty()) {
+                byNormalizedName.putIfAbsent(Normalization.of(text), text);
+            }
+        }
+        return List.copyOf(byNormalizedName.values());
     }
 
     private Intent inviteMember(ToolCall call) {

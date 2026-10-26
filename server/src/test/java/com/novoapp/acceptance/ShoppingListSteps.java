@@ -15,8 +15,10 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Passos de `mercado-lista-de-compras.feature` -- todos os nove cenarios sao
- * @etapa2, com a tag no nivel da Funcionalidade.
+ * Passos de `mercado-lista-de-compras.feature`. Nasceram para os nove cenarios
+ * @etapa2, com a tag no nivel da Funcionalidade; hoje servem tambem aos @etapa3
+ * de remocao e aos @saneamento, que herdam aquela tag e sao separados pelos
+ * runners.
  *
  * <p>Arquivo proprio, e nao adaptacao de {@link ExpenseByChatSteps}: nenhum
  * passo de mercado existia quando aqueles foram escritos, e o pouco que os dois
@@ -75,6 +77,17 @@ public class ShoppingListSteps {
     public void itemsPending(String first, String second) {
         itemAlreadyPending(first);
         itemAlreadyPending(second);
+    }
+
+    /**
+     * Tres, e nao dois: os cenarios de varios itens numa mensagem precisam de um
+     * item que a mensagem <b>nao</b> cita, para provar que so os citados mudam.
+     */
+    @Dado("^que os itens \"([^\"]*)\", \"([^\"]*)\" e \"([^\"]*)\" estão pendentes$")
+    public void threeItemsPending(String first, String second, String third) {
+        itemAlreadyPending(first);
+        itemAlreadyPending(second);
+        itemAlreadyPending(third);
     }
 
     /**
@@ -164,6 +177,12 @@ public class ShoppingListSteps {
         assertThat(rows.get(0).get(2)).isNotNull();
     }
 
+    @Entao("^os itens \"([^\"]*)\" e \"([^\"]*)\" ficam com status comprado, registrados por \"([^\"]*)\"$")
+    public void itemsPurchasedBy(String first, String second, String memberName) {
+        itemPurchasedBy(first, memberName);
+        itemPurchasedBy(second, memberName);
+    }
+
     @E("^o item \"([^\"]*)\" continua pendente$")
     public void itemStillPending(String itemName) {
         assertThat(statusOf(itemName)).isEqualTo(PENDING);
@@ -199,6 +218,12 @@ public class ShoppingListSteps {
         assertThat(rows.get(0).get(0)).isEqualTo(REMOVED);
         assertThat(rows.get(0).get(1)).isNotNull();
         assertThat(rows.get(0).get(2)).isNotNull();
+    }
+
+    @Entao("^os itens \"([^\"]*)\" e \"([^\"]*)\" saem da lista de pendentes$")
+    public void itemsLeftThePendingList(String first, String second) {
+        itemLeftThePendingList(first);
+        itemLeftThePendingList(second);
     }
 
     @Entao("^nenhum item sai da lista$")
@@ -247,6 +272,31 @@ public class ShoppingListSteps {
         for (List<Object> row : fixtures.query("SELECT name FROM list_item")) {
             assertThat(receipt).contains(String.valueOf(row.get(0)));
         }
+    }
+
+    /**
+     * Um recibo so, citando os dois. O defeito de 2026-10-20 era exatamente um
+     * recibo que citava o primeiro item e calava sobre o segundo -- conferir so
+     * o banco nao pegaria o silencio.
+     */
+    @E("^\"([^\"]*)\" recebe um único recibo citando \"([^\"]*)\" e \"([^\"]*)\"$")
+    public void receivesSingleReceiptCiting(String actor, String first, String second) {
+        assertThat(world.repliesTo(actor)).hasSize(1);
+        assertThat(world.lastReplyTo(actor)).contains(first).contains(second);
+    }
+
+    /**
+     * A pendencia e uma so, com os dois itens dentro: duas perguntas para uma
+     * mensagem seria o que o SDD de <code>conversation</code> proibe, e uma
+     * pergunta com um item so seria o defeito de volta.
+     */
+    @E("^\"([^\"]*)\" recebe uma pergunta de confirmação citando \"([^\"]*)\" e \"([^\"]*)\"$")
+    public void receivesConfirmationCiting(String actor, String first, String second) {
+        String reply = world.lastReplyTo(actor);
+        assertThat(reply).contains(first).contains(second);
+        assertThat(fold(reply)).contains("confirma");
+        assertThat(fixtures.count("SELECT count(*) FROM pending_action WHERE resolved_at IS NULL"))
+                .isEqualTo(1);
     }
 
     @E("^\"([^\"]*)\" é informado de que o item já estava na lista, pedido por \"([^\"]*)\"$")
