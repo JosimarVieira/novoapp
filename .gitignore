@@ -3,7 +3,7 @@
 legacy/
 .obsidian/
 docs/.obsidian/
-
+/graphify-out/
 # build do server/
 target/
 .mvn/
