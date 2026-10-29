@@ -5,6 +5,7 @@ import com.novoapp.common.message.ChatReply;
 import com.novoapp.common.message.InboundMessage;
 import com.novoapp.conversation.action.ChatActionHandler;
 import com.novoapp.conversation.action.ShoppingListView;
+import com.novoapp.conversation.cart.ChatCartService;
 import com.novoapp.conversation.ProcessingOutcome.Result;
 import com.novoapp.conversation.entity.PendingResolution;
 import com.novoapp.finance.CategoryCreation;
@@ -106,6 +107,9 @@ public class ConversationOrchestrator {
 
     @Inject
     ShoppingListView listView;
+
+    @Inject
+    ChatCartService cart;
 
     @Inject
     ObjectMapper objectMapper;
@@ -237,6 +241,15 @@ public class ConversationOrchestrator {
 
         PendingIntent.Option option = options.get(chosen - 1);
         pendingActions.resolve(pending.id(), PendingResolution.CONFIRMED);
+        // A escolha de categoria so sabia terminar em despesa, e o primeiro
+        // fechamento pelo carrinho (ADR-0040) precisa que ela termine no elo. E o
+        // acoplamento que o gatilho da decisao #26 descreve, resolvido do mesmo
+        // jeito que executeDeferred: pela acao guardada, e nao pelo tipo da
+        // pergunta (ADR-0029).
+        if (intent.deferred() == PendingIntent.DeferredAction.CLOSE_PURCHASE) {
+            actions.askCheckoutAmount(context, option, intent.itemNamesOrEmpty(), intent.sourceMessageId(), reply);
+            return interpreted();
+        }
         return registerOrAskAmount(context, option, intent.amountCents(), intent.description(),
                 intent.sourceMessageId(), reply);
     }
@@ -771,6 +784,11 @@ public class ConversationOrchestrator {
 
         return switch (result) {
             case CheckoutResult.Closed closed -> {
+                // O que fechou sai do carrinho de quem fechou (ADR-0040). Fora da
+                // transacao do elo, de proposito: ela e de shopping (ADR-0031), e
+                // um carrinho que sobrasse so mostraria item que ja nao esta
+                // pendente -- ou seja, nada.
+                cart.dropClosed(context);
                 // O que ainda falta vai no recibo: e a informacao que a pessoa
                 // precisa no mercado, com o celular na mao.
                 reply.send(receipts.checkoutReceipt(reply.locale(), closed,

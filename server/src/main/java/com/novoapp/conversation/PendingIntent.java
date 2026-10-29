@@ -190,6 +190,21 @@ public record PendingIntent(PendingActionType type,
                 sourceMessageId, List.of(category));
     }
 
+    /**
+     * "Em qual categoria eu lanco esta compra?" -- o primeiro fechamento pelo
+     * carrinho da vida do household, que nao tem fechamento anterior de onde
+     * herdar a categoria (ADR-0040, item 4). A pergunta e a de sempre,
+     * {@code CHOOSE_CATEGORY}; a acao e o elo. Escolhida a categoria, segue
+     * para "quanto foi?" com os mesmos itens.
+     *
+     * @param itemNames os itens do carrinho ainda pendentes no toque em fechar
+     */
+    public static PendingIntent chooseCheckoutCategory(List<Option> options, List<String> itemNames,
+                                                       UUID sourceMessageId) {
+        return new PendingIntent(PendingActionType.CHOOSE_CATEGORY, DeferredAction.CLOSE_PURCHASE,
+                null, null, null, null, List.copyOf(itemNames), null, null, sourceMessageId, options);
+    }
+
     /** "Fecho a compra de R$ 180,00 em Mercado?" -- confianca media no elo. */
     public static PendingIntent confirmCheckout(Option category, Long amountCents,
                                                 List<String> itemNames, UUID sourceMessageId) {
