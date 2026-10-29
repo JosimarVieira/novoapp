@@ -19,6 +19,7 @@ Aqui ficam só o mapa e o estado.
 | [`financas-lancamento-por-chat`](features/financas-lancamento-por-chat.feature) | Despesa por mensagem curta: categoria reconhecida, variações de escrita, categoria inexistente, ambiguidade, valor ausente, descrição, desfazer, reentrega, número não vinculado, mais o que o saneamento e o uso real acrescentaram (confiança média, mensagem nova sobre pendência aberta, acento na categoria-pai, valor inventado, resposta pelo nome da opção) | 26 | 4 `@etapa1`, 12 `@etapa2`, 10 `@saneamento` |
 | [`mercado-lista-de-compras`](features/mercado-lista-de-compras.feature) | Lista compartilhada: adicionar por linguagem natural, quantidade, item repetido, "o que está faltando?", marcar comprado, item escrito sem acento, reentrega, remover item, e vários itens numa mensagem só ao marcar e ao remover | 18 | 9 `@etapa2`, 3 `@etapa3`, 6 `@saneamento` |
 | [`elo-fechamento-de-compra`](features/elo-fechamento-de-compra.feature) | O elo lista→despesa: fechar tudo ou em partes, falha atômica, desfazer dos dois lados, fechar sem lista ativa, reentrega, item com valor na mesma mensagem (`açúcar 20`) | 11 | 11 `@etapa3` |
+| [`mercado-botoes-na-lista`](features/mercado-botoes-na-lista.feature) | Botões na lista ([ADR-0040](../01-adr/0040-botoes-na-lista-de-compras-e-carrinho-por-fio.md)): remover e devolver, carrinho do fio, fechar pelo carrinho, categoria do último fechamento, clique em lista desatualizada, toque duplo, reentrega do clique | 16 | 16 `@acoes-no-chat` |
 | [`vinculo-de-identidade`](features/vinculo-de-identidade.feature) | Onboarding: primeiro contato cria a própria família; convite entra em família existente; telefone errado, convite expirado, convite reusado, pessoa em duas famílias, convite com confiança média | 11 | 9 `@etapa1`, 1 `@etapa2`, 1 `@saneamento` |
 
 **Não escrita**: tarefas/agenda. É o primeiro trabalho da Etapa 2b, que
@@ -40,6 +41,13 @@ Onde a tag fica depende do arquivo. `financas-lancamento-por-chat` e
 `mercado-lista-de-compras` também era, e deixou de ser: a tag `@etapa2` continua
 na `Funcionalidade:` e é herdada por todo cenário novo, inclusive pelos que não
 são da Etapa 2a.
+
+`@acoes-no-chat` é a quinta, criada em 2026-10-29 com a
+[ADR-0040](../01-adr/0040-botoes-na-lista-de-compras-e-carrinho-por-fio.md). Também
+não é etapa — a mudança não abre domínio novo — e mora num arquivo próprio
+justamente para não herdar o `@etapa2` da `Funcionalidade:` de
+`mercado-lista-de-compras`. Roda em `AcoesNoChatAcceptanceTest`, que nasceu
+desabilitado.
 
 `@saneamento` é a quarta tag, e não é etapa. Marca cenário nascido de auditoria
 ou de uso real depois de a etapa dele já estar fechada

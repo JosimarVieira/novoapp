@@ -30,6 +30,7 @@ Ordem de leitura para quem chega agora:
 | Feature: finanças | Escrita |
 | Feature: mercado | Escrita |
 | Feature: elo | Escrita |
+| Feature: botões na lista | Escrita, [ADR-0040](01-adr/0040-botoes-na-lista-de-compras-e-carrinho-por-fio.md) aceita em 2026-10-29, sem código — runner desabilitado |
 | Feature: tarefas | **Não escrita** |
 | Feature: vínculo de identidade | Escrita, com tags `@etapa1`/`@etapa2` — ADR-0020 (convite de membro) Aceita |
 | Estratégia de testes | Escrita |

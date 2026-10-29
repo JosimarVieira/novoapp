@@ -2,7 +2,7 @@
 tipo: sdd
 modulo: conversation
 status: escrito
-atualizado_em: 2026-09-18
+atualizado_em: 2026-10-29
 adrs:
   - ADR-0004
   - ADR-0015
@@ -19,6 +19,7 @@ adrs:
   - ADR-0037
   - ADR-0038
   - ADR-0039
+  - ADR-0040
 ---
 
 # SDD — Módulo `conversation`
@@ -429,6 +430,112 @@ pergunta** ([ADR-0039](../01-adr/0039-remover-item-da-lista.md)). `comprei o
 feijão` oferece registrar como comprado porque comprar fora da lista é caso
 legítimo; remover o que não está lá não tem segunda leitura útil.
 
+## Botões e carrinho (ADR-0040, desenhado em 2026-10-29, ainda não implementado)
+
+A [ADR-0040](../01-adr/0040-botoes-na-lista-de-compras-e-carrinho-por-fio.md)
+traz para este módulo duas coisas: resolver uma Ação de botão sem modelo, e
+guardar o Carrinho. As duas sem saber de canal — o que chega é `InboundMessage`
+com uma ação e um identificador de origem opaco, e o que sai é uma resposta com
+ações neutras.
+
+### Onde a ação entra no fluxo
+
+**Antes da busca por pendência, e antes de qualquer interpretação.** Ação de
+botão não é resposta a pergunta: o botão foi desenhado pelo próprio bot, e não
+há o que interpretar. O passo 0 do fluxo passa a ser: havendo ação, ela vai
+para o tratador de ações e o fluxo termina ali. `prompt_version` e `model_name`
+voltam nulos no `ProcessingOutcome`, como em todo curto-circuito
+([ADR-0036](../01-adr/0036-instrumento-de-medicao-da-etapa-5.md)).
+
+**Clique não resolve nem supera pendência**, com uma exceção: `fechar`. Tocar no
+carrinho com uma pergunta aberta deixa a pergunta onde está — a
+[ADR-0029](../01-adr/0029-intencao-adiada-e-precedencia-de-mensagem-nova.md)
+fala de mensagem nova que muda de assunto, e um toque no carrinho não muda
+assunto nenhum. `fechar` abre uma pendência nova, e aí vale a regra que já
+existe: a pendência aberta antes deixa de esperar resposta, e segue na Central
+de pendências.
+
+### Os cinco tipos
+
+| Ação | O que faz | Escreve em |
+|---|---|---|
+| `carrinho+` | põe o item no carrinho, se ele ainda estiver pendente | carrinho |
+| `carrinho-` | tira o item do carrinho | carrinho |
+| `remover` | `removeItems` com o nome atual do item | `list_item` (via `shopping`) |
+| `devolver` | `addItems` com o nome do item removido | `list_item` (via `shopping`) |
+| `fechar` | abre a pergunta do valor (ou da categoria, no primeiro fechamento) | `pending_action` |
+
+Todos terminam do mesmo jeito: a lista é **relida do banco** e a mensagem de
+origem é substituída por ela. Item que já não está pendente não é erro — a
+resposta leva o aviso curto ("Café já saiu da lista") e o redesenho mostra o
+estado atual. É o que torna inofensivo o clique numa lista que o outro membro
+mudou desde que ela foi enviada
+([ADR-0008](../01-adr/0008-interacao-1-1-por-membro-nunca-em-grupo.md)).
+
+`remover` e `devolver` chamam os mesmos métodos de `shopping` que o texto chama,
+com o nome — o botão carrega o id, e o tratador o traduz para o nome atual do
+item. Não há método por id em `shopping` para escrita: o nome é único entre os
+pendentes ([ADR-0030](../01-adr/0030-correspondencia-de-nome-por-forma-normalizada.md)),
+e um segundo caminho de escrita seria um segundo lugar onde a regra pode
+divergir.
+
+### Fechar pelo carrinho
+
+É a mesma pergunta do cenário "Fechar sem informar valor": `ASK_AMOUNT` com
+`DeferredAction.CLOSE_PURCHASE`. O que muda é de onde vêm os dois dados que a
+tool `fecharCompra` daria:
+
+- **Itens**: os nomes dos itens do carrinho **que ainda estão pendentes** no
+  momento do toque. A pergunta cita esses nomes, e é com eles que a pendência é
+  guardada — o que acontecer com o carrinho depois do toque não muda o que o
+  `sim` vai fechar. `checkout` filtra de novo pelo que estiver pendente na hora
+  do valor, e um item fechado nesse intervalo por outra pessoa sai sem erro.
+- **Categoria**: a do último fechamento **não estornado** do household, lida em
+  `shopping`. Sem nenhum, a pendência aberta é `CHOOSE_CATEGORY`, com as
+  categorias de despesa numeradas e o mesmo `CLOSE_PURCHASE` adiado; escolhida a
+  categoria, segue para `ASK_AMOUNT`. `[a verificar ao implementar]`: hoje a
+  escolha de categoria desemboca em `registerOrAskAmount`, que só sabe terminar
+  em despesa — é o acoplamento que o gatilho da decisão #26, mais abaixo, já
+  aponta, e este caminho provavelmente o força.
+
+A resposta numérica resolve por `ShortCircuit.amountCents`, como hoje. Fechado,
+o carrinho de quem fechou é esvaziado.
+
+### O carrinho
+
+Estado do fio, como a pendência: `(household_id, member_id)`, e não do household
+nem da mensagem. Não é `PendingAction` — a ADR-0040 descarta isso na
+alternativa C —, e por isso tem tabela própria (`chat_cart_item`, ver o
+[modelo de dados](modelo-de-dados.md)). Expira por prazo de config,
+`novoapp.conversation.cart.ttl`, avaliado na leitura e sem job
+([decisão aberta #28](../DECISOES-ABERTAS.md)). Item que deixou de estar
+pendente não é apagado do carrinho por ninguém: ele só deixa de aparecer, porque
+toda leitura cruza com o status atual.
+
+Uma consulta nova da lista (`o que está faltando?`) mostra o carrinho atual —
+ele não pertence à mensagem, e duas mensagens do mesmo fio mostram o mesmo
+carrinho.
+
+### Texto dos botões
+
+Rótulos de botão são texto que este módulo manda para o chat, e seguem a regra
+"Nenhum texto deste módulo é literal no código"
+([ADR-0015](../01-adr/0015-internacionalizacao.md)). O rótulo do item é o nome
+dele; os de ação vêm do mesmo catálogo que os recibos.
+
+### Estrutura
+
+```
+conversation/
+  action/
+    ChatActionHandler   -- os cinco tipos, sempre terminando no redesenho
+    ShoppingListView    -- lista pendente + carrinho -> resposta com acoes
+  cart/
+    ChatCartService     -- poe, tira, le (ja cruzado com o status), esvazia
+    entity/ChatCartItem
+    repository/ChatCartItemRepository
+```
+
 ## Gatilhos de revisão
 
 - ~~**Etapa 3**: `fecharCompra` acrescenta um tipo de pendência ("fechar compra
@@ -455,3 +562,9 @@ legítimo; remover o que não está lá não tem segunda leitura útil.
 - **Etapa 5**: medir quantas pendências são superadas por mensagem nova. Se for
   raro, o desempate por confiança alta está apertado demais e a pessoa segue
   presa à pergunta sem que ninguém veja.
+- **ADR-0040**: se a maioria dos fechamentos passar a vir do botão, o cenário
+  "Fechar sem informar valor" deixa de ser caso de borda e vira o caminho
+  principal — e a pergunta do valor merece ser revista como interface, não como
+  exceção.
+- **[Decisão aberta #28](../DECISOES-ABERTAS.md)**: se carrinho esquecido virar
+  fechamento errado, o prazo deixa de ser config e vira regra com cenário.

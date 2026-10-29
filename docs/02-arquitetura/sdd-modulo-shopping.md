@@ -2,7 +2,7 @@
 tipo: sdd
 modulo: shopping
 status: escrito
-atualizado_em: 2026-10-24
+atualizado_em: 2026-10-29
 adrs:
   - ADR-0003
   - ADR-0004
@@ -14,6 +14,7 @@ adrs:
   - ADR-0037
   - ADR-0038
   - ADR-0039
+  - ADR-0040
 ---
 
 # SDD — Módulo `shopping`
@@ -349,6 +350,32 @@ real `Comprei ovos e sal` marcava os ovos e deixava o sal na lista, sem aviso
   ([ADR-0030](../01-adr/0030-correspondencia-de-nome-por-forma-normalizada.md)).
   Sem isso, `comprei arroz e arroz` devolveria o segundo como `NotOnTheList`,
   porque o primeiro acabou de sair da lista.
+
+## Botões na lista (ADR-0040, desenhado em 2026-10-29)
+
+**Nenhuma regra nova aqui, de propósito.** A
+[ADR-0040](../01-adr/0040-botoes-na-lista-de-compras-e-carrinho-por-fio.md)
+recusou o botão "comprei" justamente porque ele mudaria o que este módulo
+garante: `markPurchased` tira o item do alcance de `checkout`, e o elo deixaria
+de pegar o que foi tocado. O que existe no lugar — o Carrinho — mora em
+`conversation`, e fecha por `checkout(itemNames)`, o fechamento parcial da
+[ADR-0038](../01-adr/0038-item-com-valor-e-fechamento-parcial.md), com a mesma
+transação da [ADR-0031](../01-adr/0031-atomicidade-do-fechamento-de-compra.md) e
+o mesmo `desfazer` da [ADR-0032](../01-adr/0032-desfazer-alcanca-o-fechamento-inteiro.md).
+
+O módulo ganha só duas **leituras**:
+
+- **item por id**, com nome e status — o botão carrega o id do item, e
+  `conversation` precisa do nome atual para chamar `removeItems`/`addItems` e
+  do status para saber se o clique ainda vale. Escrita por id não existe, e não
+  deve existir: seria um segundo caminho para a mesma regra.
+- **categoria do último fechamento não estornado** do household — `list_checkout`
+  mais recente cujo lançamento não foi estornado, e a categoria desse lançamento,
+  pedida a `finance` pela aresta que já existe. Fechamento estornado fica de fora
+  porque pode ter sido estornado exatamente pela categoria errada.
+
+`ListItemView` passa a carregar o id do item: a lista que vira botões precisa
+dele, e a que vira texto simplesmente o ignora.
 
 ## Gatilhos de revisão
 

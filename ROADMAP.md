@@ -280,7 +280,12 @@ A ordem:
    custou código de domínio novo no fechamento — `açúcar 20` é `checkout` com um
    nome na lista, e foi o elo existir que tornou a decisão barata. Era esse o
    argumento para não resolvê-las antes, e ele se confirmou.
-3. **Inverter a autoridade da política de confiança** — é o próximo. Guardas
+3. **Botões na lista de compras**
+   ([ADR-0040](docs/01-adr/0040-botoes-na-lista-de-compras-e-carrinho-por-fio.md),
+   aceita em 2026-10-29) — é o próximo. Entrou aqui, e não depois, porque tira
+   das tools de lista parte do tráfego que o item seguinte teria de calibrar.
+   Plano e entregáveis na seção própria, abaixo da Etapa 3.
+4. **Inverter a autoridade da política de confiança**. Guardas
    determinísticas sobre o payload decidem o que der para decidir, faixa como
    resíduo. O
    diagnóstico está fechado (o `confianca` do modelo aparece anticorrelacionado
@@ -294,8 +299,8 @@ A ordem:
    ([ADR-0034](docs/01-adr/0034-valor-so-vale-se-a-pessoa-escreveu-digito.md))
    passou a valer para as duas tools que lançam dinheiro. A lista está fechada —
    a ADR pode ser escrita.
-4. **Etapa 2b.**
-5. **Etapa 5**, com gabarito anotado uma vez, sobre um sistema que parou de mudar
+5. **Etapa 2b.**
+6. **Etapa 5**, com gabarito anotado uma vez, sobre um sistema que parou de mudar
    de forma.
 
 Fica deliberadamente de lado até lá, por não ser caminho crítico do elo: a
@@ -354,6 +359,44 @@ detalhes da frase. É candidato da Etapa 5.
 
 **Entregável, entregue**: `comprei tudo, 180` fecha a lista e lança a despesa. É
 a demonstração que vende o produto.
+
+## Botões na lista de compras (planejado em 2026-10-29)
+
+Não é etapa numerada, pelo mesmo motivo que o saneamento não foi: não abre
+domínio novo. Muda **como** a lista é operada no chat, e o domínio não muda —
+`checkout`, `removeItem` e `addItems` são os mesmos, com os mesmos cenários. A
+decisão e as alternativas estão na
+[ADR-0040](docs/01-adr/0040-botoes-na-lista-de-compras-e-carrinho-por-fio.md); o
+comportamento, nos 16 cenários de
+[`mercado-botoes-na-lista.feature`](docs/03-specs/features/mercado-botoes-na-lista.feature),
+tag `@acoes-no-chat`, com runner próprio (`AcoesNoChatAcceptanceTest`) nascido
+desabilitado.
+
+O pedido original era um botão "comprei" por item. Ele foi recusado pelo que a
+ADR mostra: `checkout` só fecha item pendente, então cada toque em "comprei"
+tiraria o item do alcance do elo, e `comprei tudo, 180` viraria despesa sem
+lista. "Peguei" virou carrinho do fio, e fechar o carrinho é o fechamento
+parcial que já existe.
+
+Três passos, cada um com algo que dá para ver funcionando:
+
+1. **Contrato neutro e remover.** `InboundMessage` ganha a ação de botão,
+   `OutboundMessagePort` ganha resposta com ações e "substituir a origem", o
+   adaptador do Telegram passa a aceitar `callback_query`, e `inbound_message`
+   ganha o tipo da linha. **Entregável**: tocar no botão de remover tira o item, a
+   mesma mensagem se redesenha, e `devolver` traz o item de volta. Cenários de
+   remover, de lista desatualizada e de reentrega verdes.
+2. **Carrinho.** Tabela do carrinho, com `household_id` e RLS. **Entregável**:
+   tocar no carrinho marca o item só na tela de quem tocou, e a lista da outra
+   pessoa continua igual.
+3. **Fechar pelo carrinho.** Pendência `ASK_AMOUNT` com `CLOSE_PURCHASE`,
+   categoria do último fechamento não estornado, pergunta de categoria no primeiro
+   fechamento da família. **Entregável**: carrinho → fechar → `60` gera o
+   fechamento ligado à despesa, e `desfazer` reverte os dois lados. Os 16 cenários
+   verdes, e o `@Disabled` sai.
+
+Abre a [decisão aberta #28](docs/DECISOES-ABERTAS.md) (vida útil do carrinho),
+com valor provisório de 3 horas.
 
 ## Etapa 2b — Tarefas e agenda (~0,5 semana)
 

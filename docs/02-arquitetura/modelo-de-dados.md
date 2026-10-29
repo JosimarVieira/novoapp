@@ -1,7 +1,7 @@
 ---
 tipo: arquitetura
 status: escrito
-atualizado_em: 2026-09-16
+atualizado_em: 2026-10-29
 adrs:
   - ADR-0003
   - ADR-0005
@@ -24,6 +24,7 @@ adrs:
   - ADR-0028
   - ADR-0030
   - ADR-0036
+  - ADR-0040
 ---
 
 # Modelo de dados
@@ -312,6 +313,7 @@ inbound_message
   provider_message_id, external_id_from,
   raw_text, received_at, processed_at,
   status (RECEIVED|INTERPRETED|EXECUTED|FAILED|IGNORED),
+  kind (TEXT|ACTION),                      -- [ADR-0040](../01-adr/0040-botoes-na-lista-de-compras-e-carrinho-por-fio.md), ainda nao migrado
   intent_json, confidence,
   prompt_version, model_name               -- quem interpretou, [ADR-0036](../01-adr/0036-instrumento-de-medicao-da-etapa-5.md)
   UNIQUE (channel, provider_message_id)     -- [ADR-0005](../01-adr/0005-idempotencia-de-mensagens-recebidas.md)
@@ -366,6 +368,42 @@ Três coisas fixadas ao criar a tabela na Etapa 2a, sem mudança do schema acima
   Pendência de sim/não e pendência de valor ausente têm as duas
   `options_json` nulo — e é por isso que "50" é lido como cinquenta reais, e não
   como "opção 50".
+
+`kind` separa mensagem de texto de Ação de botão
+([ADR-0040](../01-adr/0040-botoes-na-lista-de-compras-e-carrinho-por-fio.md)).
+Desenhada em 2026-10-29, **ainda não migrada**: entra `NOT NULL DEFAULT 'TEXT'`,
+que é verdade para toda linha que já existe. Sem ela, a calibração da
+[ADR-0035](../01-adr/0035-o-que-a-etapa-5-mede.md) teria de deduzir clique pelo
+formato de `raw_text` (o `callback_data` cru) ou pelo prefixo de
+`provider_message_id` — as duas coisas são decisão do adaptador de canal, e
+mudariam sem aviso.
+
+```
+chat_cart_item                     -- o Carrinho, ADR-0040; ainda nao migrado
+  household_id, member_id, list_item_id,
+  added_at
+  PK (household_id, member_id, list_item_id)
+```
+
+O Carrinho é estado do fio (glossário), e por isso é chaveado por membro dentro
+do household, como `pending_action` — e não por mensagem nem por household.
+Tem `household_id` e RLS como toda tabela de dado de usuário (regra 1).
+
+- **Não guarda status.** O status do item é de `list_item`; o carrinho só diz
+  que alguém o separou. Toda leitura cruza com o status atual, e item que deixou
+  de estar `PENDING` simplesmente não aparece — ninguém precisa limpá-lo quando
+  outra pessoa o fecha ou remove.
+- **A chave primária é o que torna `carrinho+` idempotente**: tocar duas vezes é
+  `INSERT ... ON CONFLICT DO NOTHING`.
+- **Prazo avaliado na leitura**, pela config `novoapp.conversation.cart.ttl`
+  ([decisão aberta #28](../DECISOES-ABERTAS.md)), sem job e sem coluna de
+  expiração — mesmo raciocínio da [ADR-0018](../01-adr/0018-central-de-pendencias.md)
+  para a pendência. `added_at` é tudo de que o prazo precisa.
+- **Esvaziado no fechamento** pelo carrinho, na mesma transação curta que lê o
+  resultado do `checkout` — e não dentro dela: a transação do elo é de
+  `shopping` ([ADR-0031](../01-adr/0031-atomicidade-do-fechamento-de-compra.md)),
+  e um carrinho que sobra depois de um fechamento só mostra itens que já não estão
+  pendentes, ou seja, nada.
 
 ## Finanças
 
