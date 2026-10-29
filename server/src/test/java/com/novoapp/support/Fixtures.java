@@ -110,6 +110,23 @@ public class Fixtures {
                 "PURCHASED".equals(status) ? java.sql.Timestamp.from(Instant.now()) : null);
     }
 
+    /**
+     * Um fechamento ja feito, so como historico: o que o fechamento pelo botao
+     * le para escolher a categoria (ADR-0040). Nenhum item aponta para ele --
+     * nao e um fechamento que o cenario vai desfazer, e montar itens comprados
+     * para ele so poria na lista coisa que nenhum passo cita.
+     */
+    public UUID insertListCheckout(UUID householdId, UUID shoppingListId, UUID transactionId,
+                                   UUID performedByMemberId, Instant performedAt) {
+        return insertReturningId("""
+                INSERT INTO list_checkout
+                    (household_id, shopping_list_id, transaction_id, items_purchased_count,
+                     performed_by_member_id, performed_at)
+                VALUES (?, ?, ?, 1, ?, ?) RETURNING id""",
+                householdId, shoppingListId, transactionId, performedByMemberId,
+                java.sql.Timestamp.from(performedAt));
+    }
+
     public UUID insertWallet(UUID householdId) {
         return insertReturningId(
                 "INSERT INTO account (household_id, name, type) VALUES (?, 'Carteira', 'WALLET') RETURNING id",

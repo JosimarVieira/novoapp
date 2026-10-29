@@ -106,8 +106,15 @@ public class ShoppingListSteps {
         insertItem(itemName, PURCHASED, world.members.keySet().iterator().next());
     }
 
+    /**
+     * Monta o estado, e nao so o confere: no {@code .feature} dos botoes
+     * (ADR-0040) o {@code Contexto} ja poe tres itens na lista, e "nao ha itens
+     * pendentes" tem de passar a ser verdade. Onde a lista ja nasce vazia, nada e
+     * apagado e a conferencia e a mesma de antes.
+     */
     @Dado("^que não há itens pendentes na lista$")
     public void noPendingItems() {
+        fixtures.execute("DELETE FROM list_item WHERE status = 'PENDING'");
         assertThat(fixtures.count("SELECT count(*) FROM list_item WHERE status = 'PENDING'")).isZero();
     }
 
@@ -136,9 +143,17 @@ public class ShoppingListSteps {
         assertThat(rows.get(0).get(1)).isEqualTo(unit);
     }
 
+    /**
+     * "O item" e o unico da lista, que e o caso para o qual o passo nasceu. Com
+     * varios itens -- devolver pelo botao (ADR-0040) -- e o item em que o
+     * cenario acabou de tocar, na linha pendente dele.
+     */
     @E("^o item fica registrado como solicitado por \"([^\"]*)\"$")
     public void itemRequestedBy(String memberName) {
-        List<List<Object>> rows = fixtures.query("SELECT requested_by_member_id FROM list_item");
+        List<List<Object>> rows = world.itemInFocus == null
+                ? fixtures.query("SELECT requested_by_member_id FROM list_item")
+                : fixtures.query("SELECT requested_by_member_id FROM list_item WHERE status = ? AND lower(name) = ?",
+                        PENDING, lower(world.itemInFocus));
         assertThat(rows).hasSize(1);
         assertThat(rows.get(0).get(0)).isEqualTo(world.members.get(memberName));
     }
@@ -226,9 +241,16 @@ public class ShoppingListSteps {
         itemLeftThePendingList(second);
     }
 
+    /**
+     * Nenhum a mais do que ja tinha saido antes do ultimo toque. Sem toque no
+     * cenario, a base e zero e o passo e o de sempre; com toque numa lista
+     * desatualizada (ADR-0040), o item que a outra pessoa ja tinha tirado nao
+     * conta como efeito deste.
+     */
     @Entao("^nenhum item sai da lista$")
     public void noItemLeftTheList() {
-        assertThat(fixtures.count("SELECT count(*) FROM list_item WHERE status = ?", REMOVED)).isZero();
+        assertThat(fixtures.count("SELECT count(*) FROM list_item WHERE status = ?", REMOVED))
+                .isEqualTo(world.removedBeforeLastTap);
     }
 
     @E("^\"([^\"]*)\" é informado de que \"([^\"]*)\" não está na lista$")

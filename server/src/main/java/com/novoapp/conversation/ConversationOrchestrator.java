@@ -1,7 +1,10 @@
 package com.novoapp.conversation;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.novoapp.common.message.ChatReply;
 import com.novoapp.common.message.InboundMessage;
+import com.novoapp.conversation.action.ChatActionHandler;
+import com.novoapp.conversation.action.ShoppingListView;
 import com.novoapp.conversation.ProcessingOutcome.Result;
 import com.novoapp.conversation.entity.PendingResolution;
 import com.novoapp.finance.CategoryCreation;
@@ -19,7 +22,6 @@ import com.novoapp.nlu.NluService;
 import com.novoapp.shopping.AddedItem;
 import com.novoapp.shopping.CheckoutResult;
 import com.novoapp.shopping.ItemDraft;
-import com.novoapp.shopping.ListItemView;
 import com.novoapp.shopping.MarkPurchasedResult;
 import com.novoapp.shopping.RemoveItemResult;
 import com.novoapp.shopping.ShoppingService;
@@ -100,6 +102,12 @@ public class ConversationOrchestrator {
     OutboundMessagePort outbound;
 
     @Inject
+    ChatActionHandler actions;
+
+    @Inject
+    ShoppingListView listView;
+
+    @Inject
     ObjectMapper objectMapper;
 
     /**
@@ -115,8 +123,14 @@ public class ConversationOrchestrator {
                                      ResolvedContext context,
                                      Channel channel,
                                      String externalId) {
-        Reply reply = new Reply(channel, externalId, context.locale());
+        Reply reply = new Reply(outbound, channel, externalId, context.locale(), message.origin());
         try {
+            // Passo 0 (ADR-0040): Acao de botao vai direto ao tratador, antes da
+            // busca por pendencia e de qualquer interpretacao. Depois da busca, um
+            // toque no carrinho seria lido como resposta a pergunta aberta.
+            if (message.isAction()) {
+                return actions.handle(message, context, reply);
+            }
             Optional<ProcessingOutcome> answered = pendingActions.findOpen(context)
                     .flatMap(pending -> answerPending(pending, message, context, reply));
             return answered.orElseGet(() -> interpretFresh(message, context, reply));
@@ -124,7 +138,7 @@ public class ConversationOrchestrator {
             // Erro depois do 200 do webhook: recibo de erro no chat, nunca so no
             // log (sdd-visao-geral.md).
             LOG.errorf(e, "Falha ao processar a mensagem %s", message.id());
-            reply.send(receipts.failure(reply.locale));
+            reply.send(receipts.failure(reply.locale()));
             return new ProcessingOutcome(Result.FAILED, null, null);
         }
     }
@@ -157,19 +171,19 @@ public class ConversationOrchestrator {
             if (answer == ShortCircuit.Answer.UNDO || answer == ShortCircuit.Answer.OTHER) {
                 return Optional.empty();
             }
-            reply.send(receipts.pendingExpired(reply.locale, pending.questionAsked()));
+            reply.send(receipts.pendingExpired(reply.locale(), pending.questionAsked()));
             return Optional.of(interpreted());
         }
 
         return Optional.of(switch (answer) {
             case UNDO -> {
                 pendingActions.resolve(pending.id(), PendingResolution.REJECTED);
-                reply.send(receipts.pendingCancelled(reply.locale));
+                reply.send(receipts.pendingCancelled(reply.locale()));
                 yield interpreted();
             }
             case NO -> {
                 pendingActions.resolve(pending.id(), PendingResolution.REJECTED);
-                reply.send(receipts.pendingRejected(reply.locale));
+                reply.send(receipts.pendingRejected(reply.locale()));
                 yield interpreted();
             }
             case YES -> confirmPending(pending, context, reply);
@@ -345,7 +359,7 @@ public class ConversationOrchestrator {
                                 intent.itemNamesOrEmpty(), intent.sourceMessageId()).stream()
                         .map(MarkPurchasedResult.Purchased::name)
                         .toList();
-                reply.send(receipts.purchasedReceipt(reply.locale, purchased));
+                reply.send(receipts.purchasedReceipt(reply.locale(), purchased));
                 yield executed(json(Map.of("tool", "marcarItemComprado", "itens", purchased)));
             }
             case CLOSE_PURCHASE -> {
@@ -379,7 +393,7 @@ public class ConversationOrchestrator {
                 // Nada criado: dois niveis violaria a ADR-0016. A pendencia
                 // continua aberta e a pergunta muda -- e pergunta, nao erro
                 // generico, que e o que o cenario exige.
-                String question = receipts.parentIsSubcategory(reply.locale, intent.suggestedCategory(),
+                String question = receipts.parentIsSubcategory(reply.locale(), intent.suggestedCategory(),
                         refused.parentName(), refused.grandparentName());
                 pendingActions.updateQuestion(pending.id(), question);
                 reply.send(question);
@@ -395,7 +409,7 @@ public class ConversationOrchestrator {
     }
 
     private ProcessingOutcome repeatQuestion(PendingActionService.Open pending, Reply reply) {
-        reply.send(receipts.didNotUnderstandPending(reply.locale, pending.questionAsked()));
+        reply.send(receipts.didNotUnderstandPending(reply.locale(), pending.questionAsked()));
         return interpreted();
     }
 
@@ -418,7 +432,7 @@ public class ConversationOrchestrator {
             // Sem pendencia aberta, desfazer volta a ser estorno (ADR-0025).
             case UNDO -> reverseLatest(context, reply);
             case YES, NO -> {
-                reply.send(receipts.nothingPending(reply.locale));
+                reply.send(receipts.nothingPending(reply.locale()));
                 yield interpreted();
             }
             // A unica saida deste switch que gasta modelo, e por isso a unica
@@ -477,7 +491,7 @@ public class ConversationOrchestrator {
         // uma palavra para responder, enquanto "nao entendi" custa reescrever a
         // mensagem inteira e nao ensina nada.
         if (expense.needsCategoryCreation()) {
-            String question = receipts.offerCategoryCreation(reply.locale, expense.suggestedCategory(),
+            String question = receipts.offerCategoryCreation(reply.locale(), expense.suggestedCategory(),
                     expense.amountCents());
             pendingActions.open(context,
                     PendingIntent.createCategory(expense.suggestedCategory(), expense.amountCents(),
@@ -509,7 +523,7 @@ public class ConversationOrchestrator {
             List<PendingIntent.Option> options = expense.alternatives().stream()
                     .map(choice -> new PendingIntent.Option(choice.id(), choice.label()))
                     .toList();
-            String question = receipts.askWhichCategory(reply.locale, options, expense.amountCents());
+            String question = receipts.askWhichCategory(reply.locale(), options, expense.amountCents());
             pendingActions.open(context,
                     PendingIntent.chooseCategory(options, expense.amountCents(), expense.description(),
                             message.id()),
@@ -527,7 +541,7 @@ public class ConversationOrchestrator {
         // valor deixou de ser possivel, e a condicao fica como declaracao de que
         // e assim que tem de ser.
         if (level == ConfidencePolicy.Level.MEDIUM && expense.hasAmount()) {
-            String question = receipts.confirmExpense(reply.locale, chosen.label(),
+            String question = receipts.confirmExpense(reply.locale(), chosen.label(),
                     expense.amountCents(), expense.description());
             pendingActions.open(context,
                     PendingIntent.confirmExpense(chosen, expense.amountCents(), expense.description(),
@@ -553,7 +567,7 @@ public class ConversationOrchestrator {
                                                   UUID sourceMessageId,
                                                   Reply reply) {
         if (amountCents == null || amountCents <= 0) {
-            String question = receipts.askAmount(reply.locale, category.label());
+            String question = receipts.askAmount(reply.locale(), category.label());
             pendingActions.open(context,
                     PendingIntent.askAmount(List.of(category), description, sourceMessageId),
                     question, List.of());
@@ -570,7 +584,7 @@ public class ConversationOrchestrator {
     private ProcessingOutcome reverseLatest(ResolvedContext context, Reply reply) {
         Optional<ReversedExpense> reversed = finance.reverseLatest(context.householdId(), context.memberId());
         if (reversed.isEmpty()) {
-            reply.send(receipts.nothingToReverse(reply.locale));
+            reply.send(receipts.nothingToReverse(reply.locale()));
             return interpreted();
         }
         ReversedExpense expense = reversed.get();
@@ -593,7 +607,7 @@ public class ConversationOrchestrator {
             return notUnderstood(reply, intent.confidence());
         }
         if (level == ConfidencePolicy.Level.MEDIUM) {
-            String question = receipts.confirmListItems(reply.locale,
+            String question = receipts.confirmListItems(reply.locale(),
                     intent.items().stream().map(ItemDraft::name).toList());
             pendingActions.open(context, PendingIntent.confirmListItems(intent.items(), message.id()),
                     question, List.of());
@@ -615,7 +629,7 @@ public class ConversationOrchestrator {
                 requesters.computeIfAbsent(item.requestedByMemberId(),
                         memberId -> members.nameOf(memberId).orElse(null)));
 
-        reply.send(receipts.listItemsReceipt(reply.locale, added, requesters));
+        reply.send(receipts.listItemsReceipt(reply.locale(), added, requesters));
         return executed(json(Map.of("tool", "adicionarItemLista",
                 "itens", added.stream().map(AddedItem::name).toList())));
     }
@@ -629,7 +643,7 @@ public class ConversationOrchestrator {
             return notUnderstood(reply, intent.confidence());
         }
         if (level == ConfidencePolicy.Level.MEDIUM) {
-            String question = receipts.confirmMarkPurchased(reply.locale, intent.itemNames());
+            String question = receipts.confirmMarkPurchased(reply.locale(), intent.itemNames());
             pendingActions.open(context,
                     PendingIntent.confirmMarkPurchased(intent.itemNames(), message.id()),
                     question, List.of());
@@ -666,11 +680,11 @@ public class ConversationOrchestrator {
             }
         }
 
-        String receipt = purchased.isEmpty() ? null : receipts.purchasedReceipt(reply.locale, purchased);
+        String receipt = purchased.isEmpty() ? null : receipts.purchasedReceipt(reply.locale(), purchased);
         if (missing.isEmpty()) {
             reply.send(receipt);
         } else {
-            String question = receipts.offerPurchaseOfUnlistedItems(reply.locale, missing);
+            String question = receipts.offerPurchaseOfUnlistedItems(reply.locale(), missing);
             pendingActions.open(context, PendingIntent.confirmPurchase(missing, sourceMessageId),
                     question, List.of());
             reply.send(receipt == null ? question : receipts.joined(receipt, question));
@@ -709,7 +723,7 @@ public class ConversationOrchestrator {
                 new PendingIntent.Option(intent.categoryId(), intent.categoryDisplayName());
 
         if (!intent.hasAmount()) {
-            String question = receipts.askCheckoutAmount(reply.locale);
+            String question = receipts.askCheckoutAmount(reply.locale());
             pendingActions.open(context,
                     PendingIntent.askCheckoutAmount(category, intent.itemNames(), message.id()),
                     question, List.of());
@@ -722,7 +736,7 @@ public class ConversationOrchestrator {
         }
 
         if (level == ConfidencePolicy.Level.MEDIUM) {
-            String question = receipts.confirmCheckout(reply.locale, category.label(),
+            String question = receipts.confirmCheckout(reply.locale(), category.label(),
                     intent.amountCents());
             pendingActions.open(context,
                     PendingIntent.confirmCheckout(category, intent.amountCents(), intent.itemNames(),
@@ -759,7 +773,7 @@ public class ConversationOrchestrator {
             case CheckoutResult.Closed closed -> {
                 // O que ainda falta vai no recibo: e a informacao que a pessoa
                 // precisa no mercado, com o celular na mao.
-                reply.send(receipts.checkoutReceipt(reply.locale, closed,
+                reply.send(receipts.checkoutReceipt(reply.locale(), closed,
                         shopping.pendingItems(context.householdId())));
                 yield executed(json(Map.of("tool", "fecharCompra",
                         "itens", closed.itemNames(),
@@ -778,7 +792,7 @@ public class ConversationOrchestrator {
                                                long amountCents,
                                                UUID sourceMessageId,
                                                Reply reply) {
-        String question = receipts.offerExpenseOnly(reply.locale, category.label(), amountCents);
+        String question = receipts.offerExpenseOnly(reply.locale(), category.label(), amountCents);
         pendingActions.open(context,
                 PendingIntent.confirmExpense(category, amountCents, null, sourceMessageId),
                 question, List.of());
@@ -799,7 +813,7 @@ public class ConversationOrchestrator {
             return notUnderstood(reply, intent.confidence());
         }
         if (level == ConfidencePolicy.Level.MEDIUM) {
-            String question = receipts.confirmRemoveListItem(reply.locale, intent.itemNames());
+            String question = receipts.confirmRemoveListItem(reply.locale(), intent.itemNames());
             pendingActions.open(context,
                     PendingIntent.confirmRemoveListItem(intent.itemNames(), message.id()),
                     question, List.of());
@@ -831,12 +845,12 @@ public class ConversationOrchestrator {
             }
         }
 
-        String notOnTheList = missing.isEmpty() ? null : receipts.removeItemsNotOnTheList(reply.locale, missing);
+        String notOnTheList = missing.isEmpty() ? null : receipts.removeItemsNotOnTheList(reply.locale(), missing);
         if (removed.isEmpty()) {
             reply.send(notOnTheList);
             return interpreted();
         }
-        String receipt = receipts.removedReceipt(reply.locale, removed);
+        String receipt = receipts.removedReceipt(reply.locale(), removed);
         reply.send(notOnTheList == null ? receipt : receipts.joined(receipt, notOnTheList));
         return executed(json(Map.of("tool", "removerItemLista", "itens", removed)));
     }
@@ -851,9 +865,12 @@ public class ConversationOrchestrator {
         if (confidence.levelOf(intent.confidence()) == ConfidencePolicy.Level.LOW) {
             return notUnderstood(reply, intent.confidence());
         }
-        List<ListItemView> pending = shopping.pendingItems(context.householdId());
-        reply.send(receipts.pendingList(reply.locale, pending));
-        return executed(json(Map.of("tool", "consultarLista", "itens", pending.size())));
+        // Com botoes desde a ADR-0040: cada item pendente com carrinho e remover.
+        // Lista vazia continua so texto -- render nao poe botao onde nao ha item.
+        ChatReply list = listView.render(context, reply.locale(), null);
+        reply.send(list);
+        return executed(json(Map.of("tool", "consultarLista", "itens",
+                shopping.pendingItems(context.householdId()).size())));
     }
 
     private ProcessingOutcome inviteMember(Intent.InviteMember intent, InboundMessage message,
@@ -866,7 +883,7 @@ public class ConversationOrchestrator {
         // palpite da a um telefone errado o caminho para dentro da familia -- e
         // era a que executava direto em confianca media (ADR-0029).
         if (level == ConfidencePolicy.Level.MEDIUM) {
-            String question = receipts.confirmInvite(reply.locale, intent.memberName(),
+            String question = receipts.confirmInvite(reply.locale(), intent.memberName(),
                     intent.phoneNumber());
             pendingActions.open(context,
                     PendingIntent.confirmInvite(intent.memberName(), intent.phoneNumber(), message.id()),
@@ -880,18 +897,18 @@ public class ConversationOrchestrator {
     private ProcessingOutcome issueInvite(ResolvedContext context, String memberName,
                                           String phoneNumber, Reply reply) {
         InviteIssuer.IssueResult result = invites.issue(context.householdId(), context.memberId(),
-                reply.channel, memberName, phoneNumber);
+                reply.channel(), memberName, phoneNumber);
         return switch (result) {
             case InviteIssuer.IssueResult.Issued issued -> {
-                reply.send(receipts.inviteIssued(reply.locale, issued.invite()));
+                reply.send(receipts.inviteIssued(reply.locale(), issued.invite()));
                 yield executed(json(Map.of("tool", "convidarMembro", "telefone", phoneNumber)));
             }
             case InviteIssuer.IssueResult.NotOwner ignored -> {
-                reply.send(receipts.inviteNotOwner(reply.locale));
+                reply.send(receipts.inviteNotOwner(reply.locale()));
                 yield interpreted();
             }
             case InviteIssuer.IssueResult.AlreadyInvited already -> {
-                reply.send(receipts.inviteAlreadyPending(reply.locale, already.phoneNumber()));
+                reply.send(receipts.inviteAlreadyPending(reply.locale(), already.phoneNumber()));
                 yield interpreted();
             }
         };
@@ -900,7 +917,7 @@ public class ConversationOrchestrator {
     // ------------------------------------------------------------------
 
     private ProcessingOutcome notUnderstood(Reply reply, double confidenceValue) {
-        reply.send(receipts.notUnderstood(reply.locale));
+        reply.send(receipts.notUnderstood(reply.locale()));
         return new ProcessingOutcome(Result.INTERPRETED, confidenceValue, null);
     }
 
@@ -940,29 +957,6 @@ public class ConversationOrchestrator {
             // Log de calibracao nao pode derrubar um lancamento ja gravado.
             LOG.warnf(e, "Nao foi possivel serializar o intent_json de %s", value);
             return null;
-        }
-    }
-
-    /**
-     * Pra onde responder, e em que idioma. Nenhuma decisao de dominio olha pro
-     * canal (regra 5); o idioma anda junto porque toda resposta precisa dele
-     * (ADR-0015) e carrega-lo em parametro separado em cada metodo seria mais um
-     * lugar onde esquecer de propagar responde no idioma errado em silencio.
-     */
-    private final class Reply {
-
-        private final Channel channel;
-        private final String externalId;
-        private final Locale locale;
-
-        private Reply(Channel channel, String externalId, Locale locale) {
-            this.channel = channel;
-            this.externalId = externalId;
-            this.locale = locale;
-        }
-
-        private void send(String text) {
-            outbound.send(channel, externalId, text);
         }
     }
 }

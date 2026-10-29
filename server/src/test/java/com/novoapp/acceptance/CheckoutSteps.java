@@ -204,12 +204,18 @@ public class CheckoutSteps {
     // O elo
     // ------------------------------------------------------------------
 
+    /**
+     * O fechamento que o cenario criou -- o plantado como historico do household
+     * (ADR-0040) nao conta, e nao tem item nenhum apontando para ele.
+     */
     @E("^o fechamento fica ligado à despesa criada$")
     public void checkoutLinkedToExpense() {
         List<List<Object>> rows = fixtures.query("""
                 SELECT c.id, c.items_purchased_count
                 FROM list_checkout c JOIN transaction t ON t.id = c.transaction_id
-                WHERE t.reversed_at IS NULL""");
+                WHERE t.reversed_at IS NULL""").stream()
+                .filter(row -> !world.plantedCheckouts.contains(row.get(0)))
+                .toList();
         assertThat(rows).hasSize(1);
         // O vinculo vale nos dois sentidos: o fechamento aponta para o
         // lancamento, e cada item fechado aponta para o fechamento -- e este

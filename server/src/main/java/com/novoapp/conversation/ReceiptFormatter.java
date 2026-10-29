@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -362,11 +363,87 @@ public class ReceiptFormatter {
     }
 
     public String pendingList(Locale locale, List<ListItemView> items) {
+        return pendingList(locale, items, Set.of());
+    }
+
+    /**
+     * A lista como texto, marcando o que esta no carrinho de quem a le
+     * (ADR-0040). O carrinho nao muda o status do item: para a familia ele
+     * continua pendente, e por isso aparece na mesma lista, so marcado.
+     */
+    public String pendingList(Locale locale, List<ListItemView> items, Set<UUID> inCart) {
         if (items.isEmpty()) {
             return Messages.get(locale, MessageKey.LIST_EMPTY);
         }
         return Messages.get(locale, MessageKey.LIST_PENDING,
-                bulleted(locale, items.stream().map(item -> describeItem(locale, item)).toList()));
+                bulleted(locale, items.stream().map(item -> inCart.contains(item.id())
+                        ? Messages.get(locale, MessageKey.LIST_ITEM_IN_CART, describeItem(locale, item))
+                        : describeItem(locale, item)).toList()));
+    }
+
+    // ------------------------------------------------------------------
+    // Botoes na lista (ADR-0040)
+    // ------------------------------------------------------------------
+
+    /** O rotulo mostra o estado atual; o toque leva ao contrario. */
+    public String cartButton(Locale locale, String itemName, boolean inCart) {
+        return Messages.get(locale, inCart ? MessageKey.LIST_BUTTON_CART_REMOVE : MessageKey.LIST_BUTTON_CART_ADD,
+                itemName);
+    }
+
+    public String removeButton(Locale locale) {
+        return Messages.get(locale, MessageKey.LIST_BUTTON_REMOVE);
+    }
+
+    public String restoreButton(Locale locale, String itemName) {
+        return Messages.get(locale, MessageKey.LIST_BUTTON_RESTORE, itemName);
+    }
+
+    public String closeCartButton(Locale locale, int itemCount) {
+        return itemCount == 1
+                ? Messages.get(locale, MessageKey.LIST_BUTTON_CLOSE_ONE)
+                : Messages.get(locale, MessageKey.LIST_BUTTON_CLOSE_MANY, itemCount);
+    }
+
+    /**
+     * Clique num item que ja nao esta pendente: aviso, nao erro. O fio e 1:1
+     * (ADR-0008), e a lista que a pessoa tem na mao pode ser de antes do que o
+     * outro membro fez.
+     *
+     * @param itemName nulo quando o item nem foi encontrado
+     */
+    public String itemAlreadyGone(Locale locale, String itemName) {
+        return itemName == null
+                ? Messages.get(locale, MessageKey.LIST_NOTICE_GONE_UNKNOWN)
+                : Messages.get(locale, MessageKey.LIST_NOTICE_GONE, itemName);
+    }
+
+    public String cartIsEmpty(Locale locale) {
+        return Messages.get(locale, MessageKey.LIST_NOTICE_CART_EMPTY);
+    }
+
+    /**
+     * "Quanto foi?" do fechamento pelo carrinho. Cita os itens que de fato vao
+     * fechar e a categoria que vai receber o lancamento: ela vem do ultimo
+     * fechamento, e e aqui que a pessoa ve se a familia mudou de habito antes
+     * de o dinheiro ser lancado (ADR-0040, item 4).
+     */
+    public String askCartCheckoutAmount(Locale locale, List<String> itemNames, String categoryLabel) {
+        return itemNames.size() == 1
+                ? Messages.get(locale, MessageKey.CART_CHECKOUT_AMOUNT_ASK_ONE, itemNames.get(0), categoryLabel)
+                : Messages.get(locale, MessageKey.CART_CHECKOUT_AMOUNT_ASK_MANY, bulleted(locale, itemNames),
+                        categoryLabel);
+    }
+
+    /** O primeiro fechamento pelo botao da vida do household (ADR-0040, item 4). */
+    public String askCartCheckoutCategory(Locale locale, List<PendingIntent.Option> options) {
+        return Messages.get(locale, MessageKey.CART_CHECKOUT_CATEGORY_ASK)
+                + "\n" + numbered(locale, options.stream().map(PendingIntent.Option::label).toList())
+                + "\n" + Messages.get(locale, MessageKey.CATEGORY_CHOOSE_FOOTER);
+    }
+
+    public String cartCheckoutWithoutCategory(Locale locale) {
+        return Messages.get(locale, MessageKey.CART_CHECKOUT_NO_CATEGORY);
     }
 
     // ------------------------------------------------------------------

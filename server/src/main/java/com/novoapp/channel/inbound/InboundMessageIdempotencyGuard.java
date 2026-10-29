@@ -27,8 +27,8 @@ public class InboundMessageIdempotencyGuard {
 
     private static final String INSERT_IF_NEW = """
             INSERT INTO inbound_message
-                (id, channel, provider_message_id, external_id_from, raw_text, received_at, status)
-            VALUES (gen_random_uuid(), ?1, ?2, ?3, ?4, now(), 'RECEIVED')
+                (id, channel, provider_message_id, external_id_from, raw_text, received_at, status, kind)
+            VALUES (gen_random_uuid(), ?1, ?2, ?3, ?4, now(), 'RECEIVED', ?5)
             ON CONFLICT (channel, provider_message_id) DO NOTHING
             RETURNING id""";
 
@@ -49,6 +49,10 @@ public class InboundMessageIdempotencyGuard {
                 .setParameter(2, inbound.providerMessageId())
                 .setParameter(3, inbound.externalId())
                 .setParameter(4, inbound.rawText())
+                // Texto ou clique (ADR-0040), gravado na mesma instrucao que
+                // decide a reentrega: um clique reentregue e descartado aqui
+                // exatamente como uma mensagem de texto reentregue.
+                .setParameter(5, inbound.kind().name())
                 .getResultList();
 
         return inserted.isEmpty() ? Optional.empty() : Optional.of(inserted.get(0));
