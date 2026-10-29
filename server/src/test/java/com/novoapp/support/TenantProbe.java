@@ -1,6 +1,7 @@
 package com.novoapp.support;
 
 import com.novoapp.common.tenancy.HouseholdScoped;
+import com.novoapp.conversation.cart.repository.ChatCartItemRepository;
 import com.novoapp.conversation.repository.PendingActionRepository;
 import com.novoapp.finance.repository.AccountRepository;
 import com.novoapp.finance.repository.CategoryRepository;
@@ -39,6 +40,9 @@ public class TenantProbe {
     ListItemRepository listItems;
 
     @Inject
+    ChatCartItemRepository cartItems;
+
+    @Inject
     EntityManager entityManager;
 
     @Transactional
@@ -75,6 +79,12 @@ public class TenantProbe {
     @HouseholdScoped
     public long countListItems() {
         return listItems.count();
+    }
+
+    @Transactional
+    @HouseholdScoped
+    public long countCartItems() {
+        return cartItems.count();
     }
 
     /**

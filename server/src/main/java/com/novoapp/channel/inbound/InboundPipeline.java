@@ -2,6 +2,7 @@ package com.novoapp.channel.inbound;
 
 import com.novoapp.common.i18n.MessageKey;
 import com.novoapp.common.i18n.Messages;
+import com.novoapp.common.message.ChatReply;
 import com.novoapp.common.message.InboundMessage;
 import com.novoapp.common.tenancy.TenantContext;
 import com.novoapp.conversation.ConversationOrchestrator;
@@ -48,18 +49,29 @@ public class InboundPipeline {
 
     public void process(UUID messageId, NormalizedInbound inbound) {
         try {
+            // O callback_data cru nao e texto da pessoa: nao pode ser lido como
+            // link de convite nem como resposta de onboarding.
             IncomingContact contact = new IncomingContact(inbound.channel(), inbound.externalId(),
-                    inbound.senderName(), inbound.rawText(), inbound.sharedPhoneNumber());
+                    inbound.senderName(), inbound.isAction() ? null : inbound.rawText(),
+                    inbound.sharedPhoneNumber());
 
             switch (identityResolution.resolveContext(contact)) {
                 case ContextResolution.ResolvedContext context -> execute(messageId, inbound, context);
                 case ContextResolution.ChooseHousehold choose -> {
-                    outbound.send(inbound.channel(), inbound.externalId(),
-                            OnboardingMessages.chooseHousehold(choose.householdNames()));
+                    send(inbound, OnboardingMessages.chooseHousehold(choose.householdNames()));
                     log.markIgnored(messageId);
                 }
                 case ContextResolution.OnboardingStep ignored -> {
-                    onboarding.handle(contact);
+                    if (inbound.isAction()) {
+                        // Botao so existe para quem ja tem household; clique de
+                        // quem esta em onboarding e de mensagem que ja nao vale.
+                        // Responde ao clique, para o botao nao ficar carregando,
+                        // e nao entra no fluxo de onboarding.
+                        outbound.send(inbound.channel(), inbound.externalId(),
+                                ChatReply.text(null).inReplyTo(inbound.origin()));
+                    } else {
+                        onboarding.handle(contact);
+                    }
                     // Nenhum household pra atribuir: a mensagem fica com
                     // household_id nulo, que e a excecao nomeada da ADR-0003.
                     log.markIgnored(messageId);
@@ -85,7 +97,8 @@ public class InboundPipeline {
     private void execute(UUID messageId, NormalizedInbound inbound, ContextResolution.ResolvedContext context) {
         TenantContext.withHousehold(context.householdId(), () -> {
             log.attachHousehold(messageId, context.householdId());
-            InboundMessage message = new InboundMessage(messageId, inbound.rawText(), Instant.now());
+            InboundMessage message = new InboundMessage(messageId, inbound.rawText(), Instant.now(),
+                    inbound.action(), inbound.origin());
             ProcessingOutcome outcome = conversation.process(message, context,
                     inbound.channel(), inbound.externalId());
             // O recibo do usuario ja saiu. Falhar aqui e problema de
@@ -107,8 +120,7 @@ public class InboundPipeline {
      */
     private void failed(UUID messageId, NormalizedInbound inbound) {
         try {
-            outbound.send(inbound.channel(), inbound.externalId(),
-                    Messages.get(Messages.DEFAULT, MessageKey.FAILURE));
+            send(inbound, Messages.get(Messages.DEFAULT, MessageKey.FAILURE));
         } catch (RuntimeException e) {
             LOG.errorf(e, "Recibo de erro da mensagem %s nao foi entregue", messageId);
         }
@@ -116,6 +128,19 @@ public class InboundPipeline {
             log.markFailed(messageId);
         } catch (RuntimeException e) {
             LOG.errorf(e, "Status FAILED da mensagem %s nao foi gravado", messageId);
+        }
+    }
+
+    /**
+     * Texto em resposta a mensagem que nao chegou a <code>conversation</code>.
+     * Num clique, vai como resposta a ele (ADR-0040): todo clique e respondido,
+     * inclusive quando o que se tem a dizer e um erro.
+     */
+    private void send(NormalizedInbound inbound, String text) {
+        if (inbound.isAction()) {
+            outbound.send(inbound.channel(), inbound.externalId(), ChatReply.text(text).inReplyTo(inbound.origin()));
+        } else {
+            outbound.send(inbound.channel(), inbound.externalId(), text);
         }
     }
 }

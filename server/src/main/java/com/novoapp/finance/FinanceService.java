@@ -142,6 +142,31 @@ public class FinanceService {
         });
     }
 
+    /**
+     * A categoria de um lancamento que continua de pe -- vazio quando ele foi
+     * estornado ou nao existe neste household.
+     *
+     * <p>Leitura para o fechamento pelo botao (ADR-0040): <code>shopping</code>
+     * sabe qual lancamento cada fechamento gerou, e so este modulo sabe se ele
+     * foi estornado e em que categoria caiu. Devolve {@link CategoryView}, e nao
+     * a entidade, pelo mesmo motivo que <code>nlu</code> a recebe assim.
+     */
+    @Transactional
+    @HouseholdScoped
+    public Optional<CategoryView> categoryOfStandingExpense(UUID transactionId) {
+        Transaction transaction = transactions.findById(transactionId);
+        if (transaction == null || transaction.reversedAt != null) {
+            return Optional.empty();
+        }
+        Category category = categories.findById(transaction.categoryId);
+        if (category == null) {
+            return Optional.empty();
+        }
+        Category parent = category.parentCategoryId == null ? null : categories.findById(category.parentCategoryId);
+        return Optional.of(new CategoryView(category.id, category.name, category.parentCategoryId,
+                parent == null ? null : parent.name));
+    }
+
     /** Formato que a ADR-0026 fixou pro recibo quando a categoria tem pai. */
     private String displayNameOf(Category category) {
         if (category.parentCategoryId == null) {

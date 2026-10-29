@@ -2,6 +2,7 @@ package com.novoapp.shopping;
 
 import com.novoapp.common.tenancy.HouseholdScoped;
 import com.novoapp.common.text.Normalization;
+import com.novoapp.finance.CategoryView;
 import com.novoapp.finance.FinanceService;
 import com.novoapp.finance.RegisteredExpense;
 import com.novoapp.shopping.entity.ListCheckout;
@@ -394,9 +395,49 @@ public class ShoppingService {
     public List<ListItemView> pendingItems(UUID householdId) {
         return lists.findActive()
                 .map(list -> items.listPending(list.id).stream()
-                        .map(item -> new ListItemView(item.name, item.quantity, item.unit))
+                        .map(item -> new ListItemView(item.id, item.name, item.quantity, item.unit))
                         .toList())
                 .orElseGet(List::of);
+    }
+
+    /**
+     * Um item pelo id que o botao carregou (ADR-0040). Vazio para id que nao
+     * existe -- inclusive o de outro household, que a RLS esconde (ADR-0003):
+     * o id vem do cliente e nao e confiavel, e nao precisa de verificacao alem
+     * desta.
+     */
+    @Transactional
+    @HouseholdScoped
+    public Optional<ListItemSnapshot> item(UUID householdId, UUID itemId) {
+        return Optional.ofNullable(items.findById(itemId))
+                .map(item -> new ListItemSnapshot(item.id, item.name, item.status == ListItemStatus.PENDING));
+    }
+
+    /**
+     * A categoria do ultimo fechamento <b>nao estornado</b> do household -- a
+     * do fechamento pelo botao, que nao tem frase nem chamada de modelo para
+     * escolher uma (ADR-0040, item 4).
+     *
+     * <p>Fechamento estornado fica de fora porque pode ter sido estornado
+     * justamente pela categoria errada, e herda-la repetiria o erro
+     * (ADR-0040, Desdobramentos). Quem sabe se o lancamento foi estornado e qual
+     * e a categoria dele e <code>finance</code>, pela aresta que o elo ja usa.
+     *
+     * <p>Percorre do mais recente para o mais antigo e para no primeiro que
+     * vale. Em uso normal e uma consulta: estorno e excecao.
+     *
+     * @return vazio quando o household nunca fechou uma compra que continue de pe
+     */
+    @Transactional
+    @HouseholdScoped
+    public Optional<CategoryView> lastCheckoutCategory(UUID householdId) {
+        for (ListCheckout checkout : checkouts.listLatestFirst()) {
+            Optional<CategoryView> category = finance.categoryOfStandingExpense(checkout.transactionId);
+            if (category.isPresent()) {
+                return category;
+            }
+        }
+        return Optional.empty();
     }
 
     /** Cria a lista ativa no primeiro item, em vez de no onboarding (ADR-0011 vale so pra conta). */

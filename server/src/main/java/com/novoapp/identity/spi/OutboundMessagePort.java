@@ -1,5 +1,6 @@
 package com.novoapp.identity.spi;
 
+import com.novoapp.common.message.ChatReply;
 import com.novoapp.identity.Channel;
 
 /**
@@ -18,5 +19,17 @@ import com.novoapp.identity.Channel;
  */
 public interface OutboundMessagePort {
 
+    /** Texto puro. Onboarding e recibos continuam aqui, sem saber que botao existe. */
     void send(Channel channel, String externalId, String text);
+
+    /**
+     * Resposta com acoes, e a resposta a um clique (ADR-0040). Quem decide como
+     * isso vira teclado, edicao de mensagem e resposta ao clique e o adaptador;
+     * aqui so ha {@link ChatReply}, sem traco de canal (regra 5).
+     *
+     * <p>Toda resposta que carrega {@link ChatReply#origin()} responde ao clique
+     * no canal, com ou sem aviso: sem isso o cliente do Telegram deixa o botao
+     * carregando.
+     */
+    void send(Channel channel, String externalId, ChatReply reply);
 }

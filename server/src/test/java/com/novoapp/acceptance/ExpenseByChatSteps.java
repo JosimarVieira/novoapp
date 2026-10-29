@@ -160,12 +160,19 @@ public class ExpenseByChatSteps {
         assertThat(((java.sql.Date) rows.get(0).get(0)).toLocalDate()).isEqualTo(LocalDate.now());
     }
 
+    /**
+     * Uma despesa so, alem do historico que o cenario plantou como passado do
+     * household -- o "ultimo fechamento" da ADR-0040. Sem historico plantado, e
+     * exatamente uma despesa no banco, como sempre foi.
+     */
     @Entao("^uma despesa de R\\$ ([\\d.,]+) é registrada na categoria \"([^\"]*)\"$")
     public void expenseRegistered(String amount, String categoryName) {
         List<List<Object>> rows = fixtures.query("""
-                SELECT t.amount_cents, c.name, t.kind
+                SELECT t.amount_cents, c.name, t.kind, t.id
                 FROM transaction t JOIN category c ON c.id = t.category_id
-                WHERE t.reversed_at IS NULL""");
+                WHERE t.reversed_at IS NULL""").stream()
+                .filter(row -> !world.plantedTransactions.contains(row.get(3)))
+                .toList();
         assertThat(rows).hasSize(1);
         assertThat(((Number) rows.get(0).get(0)).longValue()).isEqualTo(cents(amount));
         assertThat(rows.get(0).get(1)).isEqualTo(categoryName);

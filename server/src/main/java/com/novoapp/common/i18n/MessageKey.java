@@ -84,6 +84,22 @@ public enum MessageKey {
     CHECKOUT_OFFER_EXPENSE_ONLY("checkout.offer.expense.only"),
     CHECKOUT_REVERSAL_ITEMS("checkout.reversal.items"),
 
+    // ------------------------------------- botoes na lista (ADR-0040)
+    LIST_ITEM_IN_CART("list.item.in.cart"),
+    LIST_BUTTON_CART_ADD("list.button.cart.add"),
+    LIST_BUTTON_CART_REMOVE("list.button.cart.remove"),
+    LIST_BUTTON_REMOVE("list.button.remove"),
+    LIST_BUTTON_RESTORE("list.button.restore"),
+    LIST_BUTTON_CLOSE_ONE("list.button.close.one"),
+    LIST_BUTTON_CLOSE_MANY("list.button.close.many"),
+    LIST_NOTICE_GONE("list.notice.gone"),
+    LIST_NOTICE_GONE_UNKNOWN("list.notice.gone.unknown"),
+    LIST_NOTICE_CART_EMPTY("list.notice.cart.empty"),
+    CART_CHECKOUT_AMOUNT_ASK_ONE("cart.checkout.amount.ask.one"),
+    CART_CHECKOUT_AMOUNT_ASK_MANY("cart.checkout.amount.ask.many"),
+    CART_CHECKOUT_CATEGORY_ASK("cart.checkout.category.ask"),
+    CART_CHECKOUT_NO_CATEGORY("cart.checkout.no.category"),
+
     // --------------------------------------------------------------- convite
     INVITE_ISSUED("invite.issued"),
     INVITE_NOT_OWNER("invite.not.owner"),

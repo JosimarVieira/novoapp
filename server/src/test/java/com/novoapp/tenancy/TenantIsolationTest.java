@@ -3,6 +3,7 @@ package com.novoapp.tenancy;
 import com.novoapp.common.tenancy.TenantContext;
 import com.novoapp.conversation.PendingActionService;
 import com.novoapp.conversation.PendingIntent;
+import com.novoapp.conversation.cart.ChatCartService;
 import com.novoapp.finance.FinanceService;
 import com.novoapp.identity.ContextResolution.ResolvedContext;
 import com.novoapp.shopping.ItemDraft;
@@ -49,6 +50,9 @@ class TenantIsolationTest {
 
     @Inject
     PendingActionService pendingActions;
+
+    @Inject
+    ChatCartService cart;
 
     private UUID householdA;
     private UUID householdB;
@@ -184,6 +188,33 @@ class TenantIsolationTest {
     void domainRoleCannotReachPreTenantTables() {
         assertThatThrownBy(() -> TenantContext.withHousehold(householdA,
                 () -> probe.countChannelIdentities())).isNotNull();
+    }
+
+    /**
+     * O Carrinho (ADR-0040) e a tabela de dominio mais nova, e a unica em que o
+     * papel de dominio apaga linha. Mesmo teste das outras: as linhas existem de
+     * verdade, e cada household so ve as dele.
+     */
+    @Test
+    @DisplayName("household A nunca ve o carrinho de household B")
+    void doesNotLeakCartItems() {
+        ResolvedContext silva = contextOf(householdA, "Silva", memberA, "Ana", identityA);
+        TenantContext.withHousehold(householdA, () -> {
+            UUID arroz = shopping.addItems(householdA, memberA, List.of(ItemDraft.of("Arroz")), null).get(0).itemId();
+            cart.put(silva, arroz);
+            return null;
+        });
+
+        assertThat(fixtures.count("SELECT count(*) FROM chat_cart_item")).isEqualTo(1);
+
+        TenantContext.withHousehold(householdA, () -> {
+            assertThat(probe.countCartItems()).isEqualTo(1);
+            return null;
+        });
+        TenantContext.withHousehold(householdB, () -> {
+            assertThat(probe.countCartItems()).isZero();
+            return null;
+        });
     }
 
     private ResolvedContext contextOf(UUID householdId, String householdName,

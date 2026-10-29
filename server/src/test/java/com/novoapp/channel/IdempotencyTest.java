@@ -13,6 +13,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -90,6 +91,56 @@ class IdempotencyTest {
 
         assertThat(fixtures.count("SELECT count(*) FROM inbound_message")).isEqualTo(2);
         assertThat(fixtures.count("SELECT count(*) FROM transaction")).isEqualTo(2);
+    }
+
+    /**
+     * O clique tem a mesma chave de idempotencia que a mensagem (ADR-0040): o id
+     * do <code>callback_query</code>, prefixado. Reentrega dele nao vira linha
+     * nova -- e nem um segundo efeito, que aqui seria um segundo item removido
+     * ou um aviso de "ja saiu da lista" para quem tocou uma vez so.
+     */
+    @Test
+    @DisplayName("reentrega do mesmo clique nao cria linha nova, e a linha e marcada como ACTION")
+    void clickRedeliveryIsDiscardedSilently() {
+        UUID listId = fixtures.insertShoppingList(householdId);
+        UUID itemId = fixtures.insertListItem(householdId, listId, "Cafe", "PENDING",
+                (UUID) fixtures.query("SELECT id FROM member").get(0).get(0));
+
+        click("cb-4242", 10L, "rm:" + itemId);
+        click("cb-4242", 10L, "rm:" + itemId);
+
+        List<List<Object>> rows = fixtures.query("SELECT kind, provider_message_id, raw_text FROM inbound_message");
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0).get(0)).isEqualTo("ACTION");
+        assertThat(rows.get(0).get(1)).isEqualTo("cb:cb-4242");
+        assertThat(rows.get(0).get(2)).isEqualTo("rm:" + itemId);
+        assertThat(fixtures.count("SELECT count(*) FROM list_item WHERE status = 'REMOVED'")).isEqualTo(1);
+        assertThat(outbound.clickAnswersTo(EXTERNAL_ID)).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("mensagem de texto continua TEXT")
+    void textMessageIsText() {
+        deliver(5L, "mercado 50");
+
+        assertThat(fixtures.query("SELECT kind FROM inbound_message").get(0).get(0)).isEqualTo("TEXT");
+    }
+
+    private void click(String clickId, long messageId, String data) {
+        Map<String, Object> message = new LinkedHashMap<>();
+        message.put("message_id", messageId);
+        message.put("chat", Map.of("id", Long.parseLong(EXTERNAL_ID), "type", "private"));
+
+        Map<String, Object> click = new LinkedHashMap<>();
+        click.put("id", clickId);
+        click.put("from", Map.of("id", Long.parseLong(EXTERNAL_ID), "first_name", "Ana"));
+        click.put("message", message);
+        click.put("data", data);
+
+        given().contentType(ContentType.JSON)
+                .body(Map.of("update_id", messageId, "callback_query", click))
+                .when().post("/webhook/telegram")
+                .then().statusCode(200);
     }
 
     private void deliver(long messageId, String text) {

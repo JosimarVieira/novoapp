@@ -2,7 +2,7 @@
 tipo: sdd
 modulo: channel
 status: escrito
-atualizado_em: 2026-09-18
+atualizado_em: 2026-10-29
 adrs:
   - ADR-0002
   - ADR-0005
@@ -10,6 +10,7 @@ adrs:
   - ADR-0020
   - ADR-0022
   - ADR-0036
+  - ADR-0040
 ---
 
 # SDD — Módulo `channel`
@@ -167,6 +168,151 @@ muda; muda o que o adaptador põe nela.
 - Orçamento de resposta: o interpretador demora 6s de propósito e o 200 sai em
   menos de 3s assim mesmo. É o único teste que roda com o pipeline assíncrono
   ligado — os demais rodam síncrono para não virar espera com relógio.
+
+## Ações de botão (ADR-0040, desenhado e implementado em 2026-10-29)
+
+A [ADR-0040](../01-adr/0040-botoes-na-lista-de-compras-e-carrinho-por-fio.md)
+põe botões na lista de compras. Botão é recurso de canal, e por isso o que muda
+aqui é a maior parte do trabalho: o resto do sistema vê só uma Ação de botão
+(glossário) e uma resposta com ações neutras.
+
+### Entrada
+
+Hoje `InboundMessageNormalizer` descarta todo `Update` que não é `message` — o
+comentário dele cita "callback de botão" nominalmente. Passa a aceitar
+`callback_query`, sob as mesmas condições de hoje (chat privado, `from`
+presente; [ADR-0008](../01-adr/0008-interacao-1-1-por-membro-nunca-em-grupo.md)).
+
+- **`provider_message_id` = `cb:<callback_query.id>`.** O id do
+  `callback_query` é único globalmente, ao contrário do `message_id`; o prefixo
+  só existe para nunca colidir com `chat_id:message_id`, que é o formato das
+  mensagens de texto. A chave da
+  [ADR-0005](../01-adr/0005-idempotencia-de-mensagens-recebidas.md) não muda —
+  reentrega do mesmo clique é descartada como reentrega de texto. Toque duplo
+  gera dois `callback_query` distintos e **não** é deduplicado aqui; quem o torna
+  inofensivo é o clique carregar o estado de destino (ADR-0040, item 6).
+- **`raw_text` = o `callback_data` cru.** É o registro forense do que o
+  Telegram entregou, no mesmo sentido do texto de uma mensagem.
+- **`inbound_message.kind` = `ACTION`** (texto continua `TEXT`). A coluna é o
+  que permite à calibração da [ADR-0035](../01-adr/0035-o-que-a-etapa-5-mede.md)
+  separar clique de mensagem sem inferir pelo formato de `raw_text`.
+- **Identificador de origem**: `chat_id:message_id` da mensagem onde o botão
+  estava, **mais o id do `callback_query`** (`TelegramClickOrigin`, formato
+  `<callback_query.id>|<chat_id>:<message_id>`). Vai para `InboundMessage` como
+  string opaca — `conversation` só o devolve na resposta, nunca o interpreta
+  (regra 5). O id do clique entrou ao implementar: `answerCallbackQuery` precisa
+  dele, e esta é a única forma de ele chegar ao adaptador de saída sem que o resto
+  do sistema carregue um campo com nome de canal.
+
+### Formato do `callback_data`
+
+Limite de 64 bytes do Telegram. Código curto da ação + id do item:
+`c+:<uuid>`, `c-:<uuid>`, `rm:<uuid>`, `rt:<uuid>` (devolver) e `fx` (fechar).
+Um UUID tem 36 caracteres, então o maior caso fica em 39 bytes. O mapeamento
+entre esses códigos e os tipos de `ChatAction` vive aqui e em nenhum outro
+lugar; `callback_data` que não casa com nenhum é descartado no normalizador,
+como `Update` desconhecido já é — sem linha em `inbound_message` e sem
+`answerCallbackQuery`. Responder exigiria chamar o Telegram dentro do webhook,
+que tem 3s (regra 3), para um caso que só aparece com botão de versão antiga do
+bot ou dado forjado; o cliente tira o botão do estado de carregamento sozinho
+depois de alguns segundos.
+
+O id do item vem do cliente e é, portanto, entrada não confiável. Não há
+verificação extra neste módulo: a leitura do item roda sob RLS
+([ADR-0003](../01-adr/0003-isolamento-multi-tenant-por-household.md)), e id de
+outro household simplesmente não é encontrado.
+
+### Saída
+
+`OutboundMessagePort` ganha uma segunda operação, que recebe uma resposta com
+texto, ações (rótulo + ação, em linhas) e, opcionalmente, "substituir a mensagem
+de origem". O adaptador do Telegram traduz:
+
+- ações → `reply_markup` com `inline_keyboard`;
+- substituir → `editMessageText` sobre o identificador de origem;
+- o aviso curto da resposta ("Café já saiu da lista") → `answerCallbackQuery`.
+  **Todo clique é respondido**, com ou sem aviso: sem isso o cliente do Telegram
+  mantém o botão em estado de carregamento. A resposta ao clique sai **antes** da
+  edição, e uma resposta sem texto (`ChatReply.text` nulo) só responde ao clique,
+  sem mandar mensagem.
+
+Como os dois 400 abaixo têm o mesmo status, o cliente REST traduz toda recusa da
+Bot API em `TelegramApiException` com a descrição que ela devolveu
+(`@ClientExceptionMapper` em `TelegramApi`), e é pela descrição que o adaptador
+separa um do outro.
+
+Dois desfechos de edição que não são erro:
+
+- *message is not modified* — o redesenho deu exatamente o mesmo texto e
+  teclado (toque duplo, clique que não mudou nada). Tratado como sucesso.
+- mensagem que não pode mais ser editada — o adaptador envia a resposta como
+  mensagem nova. O usuário nunca fica sem resposta (seção Erros).
+
+A operação de texto puro continua existindo: onboarding e recibos não mudam.
+
+### O webhook continua respondendo em menos de 3s
+
+Nada no fluxo de clique é síncrono. O `callback_query` entra no mesmo
+`InboundDispatcher` que a mensagem de texto, e `answerCallbackQuery` sai no fim
+do processamento assíncrono, junto com a edição (regra 3).
+
+### Clique fora de contexto
+
+O `callback_data` cru nunca é texto da pessoa: `InboundPipeline` passa `null`
+como texto a `identity`, para que ele não seja lido como link de convite. Clique
+de quem caiu em onboarding ou na escolha de household (caso que só acontece com
+mensagem velha) é respondido e marcado `IGNORED`, sem entrar no fluxo de
+onboarding. O recibo de erro de falha antes do orquestrador também sai como
+resposta ao clique: todo clique é respondido, inclusive quando o que há a dizer
+é um erro.
+
+### WhatsApp (Etapa 7)
+
+A mesma resposta com ações vira lista interativa — até dez linhas, sem edição
+de mensagem enviada `[a verificar contra a documentação da Cloud API]`. Por
+isso "substituir a origem" é pedido, não ordem: o adaptador do WhatsApp envia
+mensagem nova. Lista com mais de dez itens precisa de paginação, que é gatilho
+de revisão da ADR-0040 e não está desenhada.
+
+### Estrutura
+
+```
+channel/
+  inbound/
+    InboundMessageNormalizer   -- + callback_query -> NormalizedInbound com acao
+    TelegramActionCodec        -- callback_data <-> ChatAction (o unico lugar
+                                  que conhece os codigos curtos)
+    TelegramClickOrigin        -- o identificador de origem: id do clique +
+                                  chat_id:message_id
+    InboundMessageKind         -- TEXT | ACTION, a coluna da V9
+  outbound/
+    TelegramMessageSender      -- + send com acoes, editMessageText,
+                                  answerCallbackQuery
+    TelegramApiException       -- recusa da Bot API com a descricao dela
+```
+
+O contrato neutro mora fora daqui: `common.message.ChatAction`,
+`common.message.ChatReply` e a segunda operação de
+`identity.spi.OutboundMessagePort`.
+
+### Testes
+
+- Normalizador (`InboundMessageNormalizerTest`): `callback_query` de chat
+  privado vira ação com o `provider_message_id` prefixado; de grupo e com
+  `callback_data` desconhecido é descartado; texto não muda.
+- Codec (`TelegramActionCodecTest`): todo tipo de ação faz ida e volta, e nenhum
+  `callback_data` passa de 64 bytes.
+- Reentrega do mesmo `callback_query.id` → uma linha em `inbound_message`, com
+  `kind = ACTION`, um efeito e uma resposta ao clique (`IdempotencyTest`), e o
+  cenário "Reentrega do mesmo clique pelo provedor", que entra pelo webhook.
+- Edição que devolve *message is not modified* não vira recibo de erro nem
+  lista repetida; *message can't be edited* vira mensagem nova
+  (`TelegramMessageSenderTest`, com a API do Telegram falsa — o stub de
+  aceitação substitui este adaptador inteiro, e por isso nenhum cenário cobre
+  isto).
+- **Não coberto por teste automatizado**: o adaptador falando com o Telegram de
+  verdade. É a verificação no bot de desenvolvimento que o ROADMAP pede a cada
+  passo.
 
 ## Gatilhos de revisão
 

@@ -57,6 +57,15 @@ public class InboundMessageEntity extends PanacheEntityBase {
     @Column(name = "status", nullable = false)
     public InboundMessageStatus status = InboundMessageStatus.RECEIVED;
 
+    /**
+     * Texto ou Acao de botao (ADR-0040). Separar os dois e o que permite a
+     * calibracao da ADR-0035 medir o interpretador so sobre o que ele de fato
+     * leu: clique nunca passa pelo modelo.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "kind", nullable = false)
+    public InboundMessageKind kind = InboundMessageKind.TEXT;
+
     /** Intencao escolhida, pra calibrar o interpretador na Etapa 5. */
     @Column(name = "intent_json")
     public String intentJson;
