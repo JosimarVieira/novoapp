@@ -367,7 +367,7 @@ domínio novo. Muda **como** a lista é operada no chat, e o domínio não muda 
 `checkout`, `removeItem` e `addItems` são os mesmos, com os mesmos cenários. A
 decisão e as alternativas estão na
 [ADR-0040](docs/01-adr/0040-botoes-na-lista-de-compras-e-carrinho-por-fio.md); o
-comportamento, nos 16 cenários de
+comportamento, nos 15 cenários de
 [`mercado-botoes-na-lista.feature`](docs/03-specs/features/mercado-botoes-na-lista.feature),
 tag `@acoes-no-chat`, com runner próprio (`AcoesNoChatAcceptanceTest`) nascido
 desabilitado.
@@ -392,7 +392,7 @@ Três passos, cada um com algo que dá para ver funcionando:
 3. **Fechar pelo carrinho.** Pendência `ASK_AMOUNT` com `CLOSE_PURCHASE`,
    categoria do último fechamento não estornado, pergunta de categoria no primeiro
    fechamento da família. **Entregável**: carrinho → fechar → `60` gera o
-   fechamento ligado à despesa, e `desfazer` reverte os dois lados. Os 16 cenários
+   fechamento ligado à despesa, e `desfazer` reverte os dois lados. Os 15 cenários
    verdes, e o `@Disabled` sai.
 
 Abre a [decisão aberta #28](docs/DECISOES-ABERTAS.md) (vida útil do carrinho),
