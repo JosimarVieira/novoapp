@@ -183,7 +183,7 @@ public class Fixtures {
     /** Deixa o banco limpo entre cenarios, sem recriar o container. */
     public void truncateAll() {
         execute("""
-                TRUNCATE pending_action, list_item, shopping_list, transaction, category, account,
+                TRUNCATE chat_cart_item, pending_action, list_item, shopping_list, transaction, category, account,
                          inbound_message, onboarding_session, household_invite, channel_identity,
                          household_membership, member, household
                 RESTART IDENTITY CASCADE""");

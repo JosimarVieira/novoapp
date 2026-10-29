@@ -7,6 +7,7 @@ import com.novoapp.conversation.ProcessingOutcome;
 import com.novoapp.conversation.ProcessingOutcome.Result;
 import com.novoapp.conversation.ReceiptFormatter;
 import com.novoapp.conversation.Reply;
+import com.novoapp.conversation.cart.ChatCartService;
 import com.novoapp.identity.ContextResolution.ResolvedContext;
 import com.novoapp.shopping.ItemDraft;
 import com.novoapp.shopping.ListItemSnapshot;
@@ -55,6 +56,9 @@ public class ChatActionHandler {
     ShoppingListView listView;
 
     @Inject
+    ChatCartService cart;
+
+    @Inject
     ReceiptFormatter receipts;
 
     @Inject
@@ -63,16 +67,47 @@ public class ChatActionHandler {
     public ProcessingOutcome handle(InboundMessage message, ResolvedContext context, Reply reply) {
         ChatAction action = message.action();
         return switch (action.type()) {
+            case ADD_TO_CART -> addToCart(action.itemId(), context, reply);
+            case REMOVE_FROM_CART -> removeFromCart(action.itemId(), context, reply);
             case REMOVE_ITEM -> remove(action.itemId(), context, reply);
             case RESTORE_ITEM -> restore(action.itemId(), message.id(), context, reply);
-            // Carrinho e fechamento entram nos passos 2 e 3 da ADR-0040. Ate la o
-            // toque so redesenha: responder ao clique e obrigatorio de qualquer
-            // jeito.
-            case ADD_TO_CART, REMOVE_FROM_CART, CLOSE_CART -> {
+            // O fechamento entra no passo 3 da ADR-0040. Ate la o toque so
+            // redesenha: responder ao clique e obrigatorio de qualquer jeito.
+            case CLOSE_CART -> {
                 redraw(context, reply, null, null);
                 yield new ProcessingOutcome(Result.INTERPRETED, null, null);
             }
         };
+    }
+
+    /**
+     * "Peguei" (ADR-0040, item 2): o item vai para o carrinho de quem tocou, e
+     * <b>so</b> para ele. Nao toca <code>list_item</code> -- para a familia o
+     * item continua pendente, e continua ao alcance do fechamento.
+     */
+    private ProcessingOutcome addToCart(UUID itemId, ResolvedContext context, Reply reply) {
+        Optional<ListItemSnapshot> item = shopping.item(context.householdId(), itemId);
+        if (item.isEmpty() || !item.get().pending()) {
+            return alreadyGone(item, context, reply);
+        }
+        cart.put(context, itemId);
+        redraw(context, reply, null, null);
+        return executed("carrinho+", item.get().name());
+    }
+
+    /**
+     * Tirar do carrinho vale mesmo para item que ja saiu da lista -- e so
+     * arrumacao do fio. O aviso continua: quem tocou ainda acha que o item esta
+     * la.
+     */
+    private ProcessingOutcome removeFromCart(UUID itemId, ResolvedContext context, Reply reply) {
+        Optional<ListItemSnapshot> item = shopping.item(context.householdId(), itemId);
+        cart.take(context, itemId);
+        if (item.isEmpty() || !item.get().pending()) {
+            return alreadyGone(item, context, reply);
+        }
+        redraw(context, reply, null, null);
+        return executed("carrinho-", item.get().name());
     }
 
     /**

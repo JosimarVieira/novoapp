@@ -268,7 +268,7 @@ public class AcoesNoChatSteps {
                 .singleElement().asString().contains(itemName);
     }
 
-    @E("^a mensagem tem um botão de fechar compra com (\\d+) itens?$")
+    @E("^a mensagem tem um botão de fechar compra com (\\d+) (?:item|itens)$")
     public void hasCloseButtonWith(int count) {
         String expected = count == 1
                 ? Messages.get(Messages.DEFAULT, MessageKey.LIST_BUTTON_CLOSE_ONE)
@@ -382,7 +382,7 @@ public class AcoesNoChatSteps {
         assertThat(rows.get(0).get(2)).isEqualTo(world.chosenOption);
     }
 
-    @E("^o fechamento registra (\\d+) itens?$")
+    @E("^o fechamento registra (\\d+) (?:item|itens)$")
     public void checkoutRegistersItems(int count) {
         List<List<Object>> rows = fixtures.query("SELECT id, items_purchased_count FROM list_checkout").stream()
                 .filter(row -> !world.plantedCheckouts.contains(row.get(0)))

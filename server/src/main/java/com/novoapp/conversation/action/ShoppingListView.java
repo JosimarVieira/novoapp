@@ -4,6 +4,7 @@ import com.novoapp.common.message.ChatAction;
 import com.novoapp.common.message.ChatReply;
 import com.novoapp.common.message.ChatReply.ReplyAction;
 import com.novoapp.conversation.ReceiptFormatter;
+import com.novoapp.conversation.cart.ChatCartService;
 import com.novoapp.identity.ContextResolution.ResolvedContext;
 import com.novoapp.shopping.ListItemSnapshot;
 import com.novoapp.shopping.ListItemView;
@@ -12,6 +13,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -39,6 +41,9 @@ public class ShoppingListView {
 
     @Inject
     ReceiptFormatter receipts;
+
+    @Inject
+    ChatCartService cart;
 
     /**
      * @param restorable o item que acabou de ser removido pelo botao, que ganha o
@@ -74,8 +79,15 @@ public class ShoppingListView {
         return ChatReply.of(receipts.pendingList(locale, pending, inCart), rows);
     }
 
-    /** O carrinho entra no passo seguinte da ADR-0040; ate la, ninguem separou nada. */
+    /**
+     * O carrinho de quem le, cruzado com o que ainda esta pendente: item que
+     * outra pessoa fechou ou removeu sai do carrinho em silencio, porque ja nao
+     * esta na lista (ADR-0040, item 3).
+     */
     private Set<UUID> cartOf(ResolvedContext context, List<ListItemView> pending) {
-        return Set.of();
+        Set<UUID> carted = cart.itemIds(context);
+        Set<UUID> inCart = new LinkedHashSet<>();
+        pending.stream().map(ListItemView::id).filter(carted::contains).forEach(inCart::add);
+        return inCart;
     }
 }
