@@ -430,7 +430,7 @@ pergunta** ([ADR-0039](../01-adr/0039-remover-item-da-lista.md)). `comprei o
 feijão` oferece registrar como comprado porque comprar fora da lista é caso
 legítimo; remover o que não está lá não tem segunda leitura útil.
 
-## Botões e carrinho (ADR-0040, desenhado em 2026-10-29, ainda não implementado)
+## Botões e carrinho (ADR-0040, desenhado e implementado em 2026-10-29)
 
 A [ADR-0040](../01-adr/0040-botoes-na-lista-de-compras-e-carrinho-por-fio.md)
 traz para este módulo duas coisas: resolver uma Ação de botão sem modelo, e
@@ -493,13 +493,25 @@ tool `fecharCompra` daria:
 - **Categoria**: a do último fechamento **não estornado** do household, lida em
   `shopping`. Sem nenhum, a pendência aberta é `CHOOSE_CATEGORY`, com as
   categorias de despesa numeradas e o mesmo `CLOSE_PURCHASE` adiado; escolhida a
-  categoria, segue para `ASK_AMOUNT`. `[a verificar ao implementar]`: hoje a
-  escolha de categoria desemboca em `registerOrAskAmount`, que só sabe terminar
-  em despesa — é o acoplamento que o gatilho da decisão #26, mais abaixo, já
-  aponta, e este caminho provavelmente o força.
+  categoria, segue para `ASK_AMOUNT`. **Verificado ao implementar**: a escolha de
+  categoria desembocava em `registerOrAskAmount`, que só sabia terminar em
+  despesa — o acoplamento que o gatilho da decisão #26 aponta. Resolvido como
+  `executeDeferred` já resolve: a resposta numerada olha
+  `PendingIntent.deferred()`, e `CLOSE_PURCHASE` segue para a pergunta do valor
+  do carrinho. Não precisou de ADR — é a regra da
+  [ADR-0029](../01-adr/0029-intencao-adiada-e-precedencia-de-mensagem-nova.md),
+  "a pendência guarda o que executar", aplicada a mais um caminho.
+- **Família sem nenhuma categoria de despesa**: o toque em fechar responde com
+  uma orientação e não abre pendência. É o buraco da
+  [decisão aberta #26](../DECISOES-ABERTAS.md) pelo caminho do botão, sem
+  cenário escrito.
 
 A resposta numérica resolve por `ShortCircuit.amountCents`, como hoje. Fechado,
-o carrinho de quem fechou é esvaziado.
+o carrinho de quem fechou é esvaziado — no sentido exato de que sai dele o que
+deixou de estar pendente (`ChatCartService.dropClosed`, chamado depois de todo
+`CheckoutResult.Closed`, fora da transação do elo). Pelo carrinho, isso é tudo; o
+que ainda está pendente — separado depois do toque em fechar, ou fora de um
+fechamento parcial por texto — continua separado.
 
 ### O carrinho
 
@@ -516,6 +528,30 @@ Uma consulta nova da lista (`o que está faltando?`) mostra o carrinho atual —
 ele não pertence à mensagem, e duas mensagens do mesmo fio mostram o mesmo
 carrinho.
 
+### Decisões tomadas ao implementar (2026-10-29)
+
+- **`fechar` não redesenha a lista.** A tabela acima diz que todos terminam no
+  redesenho; `fechar` é a exceção, porque nada na lista mudou. A pergunta sai
+  como mensagem nova respondendo ao clique, e a resposta a ela é digitada.
+- **`fechar` supera a pergunta aberta** com `closeShortcutWindow`, o mesmo
+  gesto da ADR-0029 para mensagem nova que muda de assunto. Sem isso a pergunta
+  antiga voltaria a ser "a pendência aberta" do fio assim que a do fechamento
+  fosse respondida — `findOpenFor` devolve a mais recente sem resolução.
+- **`carrinho+` revive linha vencida.** O modelo de dados dizia `ON CONFLICT DO
+  NOTHING`; com isso a linha que passou do prazo ficaria lá, invisível, e tocar
+  de novo não a traria de volta. É `DO UPDATE SET added_at` **só** quando a linha
+  já venceu: dentro do prazo o toque duplo continua sem efeito.
+- **`carrinho-` num item que já saiu da lista** tira do carrinho e avisa, como
+  os outros cliques em estado velho.
+- **`Reply` saiu de dentro do orquestrador** e passou a carregar a origem do
+  clique, como já carregava o idioma: toda resposta a um clique responde a ele —
+  inclusive o recibo de erro — sem que ninguém precise lembrar de passar a
+  origem.
+- **Desfecho no log**: `EXECUTED` para os cliques que escrevem, `INTERPRETED`
+  para o que só avisa ou pergunta; `intent_json` no vocabulário do glossário
+  (`{"acao": "remover", "item": "Café"}`). `confidence`, `prompt_version` e
+  `model_name` ficam nulos.
+
 ### Texto dos botões
 
 Rótulos de botão são texto que este módulo manda para o chat, e seguem a regra
@@ -527,14 +563,20 @@ dele; os de ação vêm do mesmo catálogo que os recibos.
 
 ```
 conversation/
+  Reply                 -- para onde, em que idioma, e a qual clique responder
   action/
-    ChatActionHandler   -- os cinco tipos, sempre terminando no redesenho
+    ChatActionHandler   -- os cinco tipos, quase sempre terminando no redesenho
     ShoppingListView    -- lista pendente + carrinho -> resposta com acoes
   cart/
     ChatCartService     -- poe, tira, le (ja cruzado com o status), esvazia
     entity/ChatCartItem
     repository/ChatCartItemRepository
 ```
+
+`prompt_version` não mudou com esta seção: `staticFingerprint()` deu
+`5eb5b298b145` antes e depois. Clique não acrescenta tool nem descrição de
+parâmetro, e se o hash tivesse mudado, algo de botão teria vazado para o
+prompt.
 
 ## Gatilhos de revisão
 

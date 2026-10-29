@@ -280,12 +280,17 @@ A ordem:
    custou código de domínio novo no fechamento — `açúcar 20` é `checkout` com um
    nome na lista, e foi o elo existir que tornou a decisão barata. Era esse o
    argumento para não resolvê-las antes, e ele se confirmou.
-3. **Botões na lista de compras**
+3. ~~**Botões na lista de compras**
    ([ADR-0040](docs/01-adr/0040-botoes-na-lista-de-compras-e-carrinho-por-fio.md),
-   aceita em 2026-10-29) — é o próximo. Entrou aqui, e não depois, porque tira
-   das tools de lista parte do tráfego que o item seguinte teria de calibrar.
-   Plano e entregáveis na seção própria, abaixo da Etapa 3.
-4. **Inverter a autoridade da política de confiança**. Guardas
+   aceita em 2026-10-29).~~ **Feito em 2026-10-29**, nos três passos planejados,
+   com os 15 cenários verdes e a suíte no portão do CI
+   ([entrega](docs/05-entregas/botoes-na-lista-de-compras.md)). Entrou aqui, e
+   não depois, porque tira das tools de lista parte do tráfego que o item
+   seguinte teria de calibrar. **Pendente**: a verificação no bot de
+   desenvolvimento do Telegram, que o entregável de cada passo pede e que nenhum
+   teste automatizado substitui — o adaptador de canal é exatamente a parte que
+   o stub de aceitação troca.
+4. **Inverter a autoridade da política de confiança** — é o próximo. Guardas
    determinísticas sobre o payload decidem o que der para decidir, faixa como
    resíduo. O
    diagnóstico está fechado (o `confianca` do modelo aparece anticorrelacionado
@@ -397,6 +402,16 @@ Três passos, cada um com algo que dá para ver funcionando:
 
 Abre a [decisão aberta #28](docs/DECISOES-ABERTAS.md) (vida útil do carrinho),
 com valor provisório de 3 horas.
+
+**Entregue em 2026-10-29**, um commit por passo, com o placar subindo como o
+plano dizia: 6 cenários verdes com remover, 11 com o carrinho, 15 com o
+fechamento. O runner saiu do `@Disabled` no primeiro commit de código para a tag
+`em-construcao`, e a tag saiu com os 15 verdes. Nenhuma ADR nova: o ponto
+`[a verificar ao implementar]` do SDD de `conversation` (a escolha de categoria
+que só sabia terminar em despesa) se resolveu com a ação guardada na pendência,
+como a ADR-0029 já prevê. O que foi decidido ao implementar, o que ficou de fora
+e a verificação manual que falta estão na
+[entrega](docs/05-entregas/botoes-na-lista-de-compras.md).
 
 ## Etapa 2b — Tarefas e agenda (~0,5 semana)
 

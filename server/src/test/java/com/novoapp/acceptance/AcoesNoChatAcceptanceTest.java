@@ -5,10 +5,9 @@ import io.quarkiverse.cucumber.CucumberOptions;
 import io.quarkiverse.cucumber.CucumberQuarkusTest;
 import io.quarkus.test.common.TestResourceScope;
 import io.quarkus.test.common.WithTestResource;
-import org.junit.jupiter.api.Tag;
 
 /**
- * Botoes na lista de compras: os cenarios de
+ * Botoes na lista de compras: os quinze cenarios de
  * {@code mercado-botoes-na-lista.feature}, tag {@code @acoes-no-chat}
  * (ADR-0040).
  *
@@ -18,13 +17,15 @@ import org.junit.jupiter.api.Tag;
  * ROADMAP.
  *
  * <p>O {@code @Disabled} saiu no primeiro commit de codigo, trocado pela tag
- * {@code em-construcao}: os cenarios aparecem falhando por passo indefinido desde
- * o inicio, o placar sobe cenario a cenario, e a suite fica fora do portao do CI
- * enquanto isso, num passo informativo (`.github/workflows/ci.yml`) -- a mesma
- * disciplina da Etapa 3. A tag sai quando os quinze cenarios estiverem verdes,
- * e ai esta suite entra no portao.
+ * {@code em-construcao}: os cenarios apareceram falhando por passo indefinido, e
+ * o placar subiu passo a passo da implementacao -- seis com remover, onze com o
+ * carrinho, quinze com o fechamento. Enquanto a tag existiu, a suite rodou fora
+ * do portao do CI, no passo informativo (`.github/workflows/ci.yml`).
+ *
+ * <p><b>A tag saiu em 2026-10-29, com os quinze verdes.</b> Sem ela esta suite
+ * integra o portao: uma regressao nos botoes -- e, por eles, no elo -- volta a
+ * barrar merge.
  */
-@Tag("em-construcao")
 @CucumberOptions(
         features = "../docs/03-specs/features",
         glue = "com.novoapp.acceptance",

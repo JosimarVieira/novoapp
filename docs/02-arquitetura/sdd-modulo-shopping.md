@@ -351,7 +351,7 @@ real `Comprei ovos e sal` marcava os ovos e deixava o sal na lista, sem aviso
   Sem isso, `comprei arroz e arroz` devolveria o segundo como `NotOnTheList`,
   porque o primeiro acabou de sair da lista.
 
-## Botões na lista (ADR-0040, desenhado em 2026-10-29)
+## Botões na lista (ADR-0040, desenhado e implementado em 2026-10-29)
 
 **Nenhuma regra nova aqui, de propósito.** A
 [ADR-0040](../01-adr/0040-botoes-na-lista-de-compras-e-carrinho-por-fio.md)
@@ -369,10 +369,16 @@ O módulo ganha só duas **leituras**:
   `conversation` precisa do nome atual para chamar `removeItems`/`addItems` e
   do status para saber se o clique ainda vale. Escrita por id não existe, e não
   deve existir: seria um segundo caminho para a mesma regra.
+  `ShoppingService.item(householdId, itemId)` devolve `ListItemSnapshot` (id,
+  nome, se ainda está pendente); id de outro household simplesmente não é
+  encontrado, pela RLS.
 - **categoria do último fechamento não estornado** do household — `list_checkout`
   mais recente cujo lançamento não foi estornado, e a categoria desse lançamento,
   pedida a `finance` pela aresta que já existe. Fechamento estornado fica de fora
   porque pode ter sido estornado exatamente pela categoria errada.
+  `ShoppingService.lastCheckoutCategory` percorre os fechamentos do mais recente
+  para o mais antigo e pergunta a `FinanceService.categoryOfStandingExpense` —
+  vazio para lançamento estornado — até achar um de pé.
 
 `ListItemView` passa a carregar o id do item: a lista que vira botões precisa
 dele, e a que vira texto simplesmente o ignora.

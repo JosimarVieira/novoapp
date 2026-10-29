@@ -313,7 +313,7 @@ inbound_message
   provider_message_id, external_id_from,
   raw_text, received_at, processed_at,
   status (RECEIVED|INTERPRETED|EXECUTED|FAILED|IGNORED),
-  kind (TEXT|ACTION),                      -- [ADR-0040](../01-adr/0040-botoes-na-lista-de-compras-e-carrinho-por-fio.md), ainda nao migrado
+  kind (TEXT|ACTION),                      -- [ADR-0040](../01-adr/0040-botoes-na-lista-de-compras-e-carrinho-por-fio.md), V9
   intent_json, confidence,
   prompt_version, model_name               -- quem interpretou, [ADR-0036](../01-adr/0036-instrumento-de-medicao-da-etapa-5.md)
   UNIQUE (channel, provider_message_id)     -- [ADR-0005](../01-adr/0005-idempotencia-de-mensagens-recebidas.md)
@@ -371,15 +371,15 @@ Três coisas fixadas ao criar a tabela na Etapa 2a, sem mudança do schema acima
 
 `kind` separa mensagem de texto de Ação de botão
 ([ADR-0040](../01-adr/0040-botoes-na-lista-de-compras-e-carrinho-por-fio.md)).
-Desenhada em 2026-10-29, **ainda não migrada**: entra `NOT NULL DEFAULT 'TEXT'`,
-que é verdade para toda linha que já existe. Sem ela, a calibração da
+Desenhada e migrada em 2026-10-29 (`V9`): `NOT NULL DEFAULT 'TEXT'`, que é
+verdade para toda linha que já existia. Sem ela, a calibração da
 [ADR-0035](../01-adr/0035-o-que-a-etapa-5-mede.md) teria de deduzir clique pelo
 formato de `raw_text` (o `callback_data` cru) ou pelo prefixo de
 `provider_message_id` — as duas coisas são decisão do adaptador de canal, e
 mudariam sem aviso.
 
 ```
-chat_cart_item                     -- o Carrinho, ADR-0040; ainda nao migrado
+chat_cart_item                     -- o Carrinho, ADR-0040; V10
   household_id, member_id, list_item_id,
   added_at
   PK (household_id, member_id, list_item_id)
@@ -394,16 +394,25 @@ Tem `household_id` e RLS como toda tabela de dado de usuário (regra 1).
   de estar `PENDING` simplesmente não aparece — ninguém precisa limpá-lo quando
   outra pessoa o fecha ou remove.
 - **A chave primária é o que torna `carrinho+` idempotente**: tocar duas vezes é
-  `INSERT ... ON CONFLICT DO NOTHING`.
+  `INSERT ... ON CONFLICT`. Não é `DO NOTHING` puro, como estava desenhado: é
+  `DO UPDATE SET added_at` **só quando a linha já passou do prazo**. Com `DO
+  NOTHING`, a linha vencida ficaria lá, invisível, e tocar de novo não a traria
+  de volta.
+- **`ON DELETE CASCADE` em `list_item_id`.** O produto nunca apaga item da lista,
+  mas scripts operacionais de limpeza apagam, e carrinho apontando para item que
+  não existe não tem o que dizer a ninguém.
+- **O papel de domínio tem `DELETE` aqui**, diferente das outras tabelas de
+  domínio: tirar do carrinho não é fato que alguém precise auditar.
 - **Prazo avaliado na leitura**, pela config `novoapp.conversation.cart.ttl`
   ([decisão aberta #28](../DECISOES-ABERTAS.md)), sem job e sem coluna de
   expiração — mesmo raciocínio da [ADR-0018](../01-adr/0018-central-de-pendencias.md)
   para a pendência. `added_at` é tudo de que o prazo precisa.
-- **Esvaziado no fechamento** pelo carrinho, na mesma transação curta que lê o
-  resultado do `checkout` — e não dentro dela: a transação do elo é de
-  `shopping` ([ADR-0031](../01-adr/0031-atomicidade-do-fechamento-de-compra.md)),
-  e um carrinho que sobra depois de um fechamento só mostra itens que já não estão
-  pendentes, ou seja, nada.
+- **Esvaziado no fechamento**, numa transação curta depois do `checkout` — e
+  não dentro dela: a transação do elo é de `shopping`
+  ([ADR-0031](../01-adr/0031-atomicidade-do-fechamento-de-compra.md)), e um
+  carrinho que sobra depois de um fechamento só mostra itens que já não estão
+  pendentes, ou seja, nada. Sai do carrinho de quem fechou o que deixou de estar
+  pendente; o que ainda está pendente fica.
 
 ## Finanças
 
@@ -601,7 +610,7 @@ domínio ainda não foi escrita.
 
 ## O que existe no banco hoje
 
-`server/src/main/resources/db/migration/`, sete migrations e um callback:
+`server/src/main/resources/db/migration/`, dez migrations e um callback:
 
 - **`V1__initial_schema.sql`** (Etapa 1): `household`, `member`,
   `household_membership`, `channel_identity`, `household_invite`,
@@ -633,6 +642,18 @@ domínio ainda não foi escrita.
   da [ADR-0036](../01-adr/0036-instrumento-de-medicao-da-etapa-5.md). Duas colunas
   nuláveis, sem índice e sem mudança de policy — `inbound_message` já é exclusiva
   do papel pré-tenant.
+- **`V8__list_item_removal.sql`** (Etapa 3, 2026-09-21):
+  `list_item.removed_by_member_id` e `list_item.removed_at`, o "por quem" e o
+  "quando" da remoção ([ADR-0039](../01-adr/0039-remover-item-da-lista.md)).
+  Faltava nesta lista desde a Etapa 3; acrescentada junto com a V9 e a V10.
+- **`V9__inbound_message_kind.sql`** (2026-10-29): `inbound_message.kind`
+  (`TEXT`|`ACTION`), `NOT NULL DEFAULT 'TEXT'`, para a calibração da
+  [ADR-0035](../01-adr/0035-o-que-a-etapa-5-mede.md) separar clique de texto
+  ([ADR-0040](../01-adr/0040-botoes-na-lista-de-compras-e-carrinho-por-fio.md)).
+  Mesmo padrão da V6: tabela exclusiva do papel pré-tenant, sem grant novo.
+- **`V10__chat_cart_item.sql`** (2026-10-29): `chat_cart_item`, o Carrinho, com
+  `household_id`, RLS ativa e `FORCE`, e `SELECT, INSERT, UPDATE, DELETE` para o
+  papel de domínio — o padrão das tabelas novas da V3 e da V7, mais o `DELETE`.
 
 Fora da numeração, `afterMigrate.sql` roda a **cada start**, mesmo sem migração
 pendente, e reconcilia a senha do papel `novoapp_runtime` com a variável de

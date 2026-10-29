@@ -169,7 +169,7 @@ muda; muda o que o adaptador põe nela.
   menos de 3s assim mesmo. É o único teste que roda com o pipeline assíncrono
   ligado — os demais rodam síncrono para não virar espera com relógio.
 
-## Ações de botão (ADR-0040, desenhado em 2026-10-29, ainda não implementado)
+## Ações de botão (ADR-0040, desenhado e implementado em 2026-10-29)
 
 A [ADR-0040](../01-adr/0040-botoes-na-lista-de-compras-e-carrinho-por-fio.md)
 põe botões na lista de compras. Botão é recurso de canal, e por isso o que muda
@@ -197,8 +197,12 @@ presente; [ADR-0008](../01-adr/0008-interacao-1-1-por-membro-nunca-em-grupo.md))
   que permite à calibração da [ADR-0035](../01-adr/0035-o-que-a-etapa-5-mede.md)
   separar clique de mensagem sem inferir pelo formato de `raw_text`.
 - **Identificador de origem**: `chat_id:message_id` da mensagem onde o botão
-  estava. Vai para `InboundMessage` como string opaca — `conversation` só o
-  devolve na resposta, nunca o interpreta (regra 5).
+  estava, **mais o id do `callback_query`** (`TelegramClickOrigin`, formato
+  `<callback_query.id>|<chat_id>:<message_id>`). Vai para `InboundMessage` como
+  string opaca — `conversation` só o devolve na resposta, nunca o interpreta
+  (regra 5). O id do clique entrou ao implementar: `answerCallbackQuery` precisa
+  dele, e esta é a única forma de ele chegar ao adaptador de saída sem que o resto
+  do sistema carregue um campo com nome de canal.
 
 ### Formato do `callback_data`
 
@@ -206,8 +210,12 @@ Limite de 64 bytes do Telegram. Código curto da ação + id do item:
 `c+:<uuid>`, `c-:<uuid>`, `rm:<uuid>`, `rt:<uuid>` (devolver) e `fx` (fechar).
 Um UUID tem 36 caracteres, então o maior caso fica em 39 bytes. O mapeamento
 entre esses códigos e os tipos de `ChatAction` vive aqui e em nenhum outro
-lugar; `callback_data` que não casa com nenhum é tratado como `IGNORED`, como
-`Update` desconhecido já é.
+lugar; `callback_data` que não casa com nenhum é descartado no normalizador,
+como `Update` desconhecido já é — sem linha em `inbound_message` e sem
+`answerCallbackQuery`. Responder exigiria chamar o Telegram dentro do webhook,
+que tem 3s (regra 3), para um caso que só aparece com botão de versão antiga do
+bot ou dado forjado; o cliente tira o botão do estado de carregamento sozinho
+depois de alguns segundos.
 
 O id do item vem do cliente e é, portanto, entrada não confiável. Não há
 verificação extra neste módulo: a leitura do item roda sob RLS
@@ -224,7 +232,14 @@ de origem". O adaptador do Telegram traduz:
 - substituir → `editMessageText` sobre o identificador de origem;
 - o aviso curto da resposta ("Café já saiu da lista") → `answerCallbackQuery`.
   **Todo clique é respondido**, com ou sem aviso: sem isso o cliente do Telegram
-  mantém o botão em estado de carregamento.
+  mantém o botão em estado de carregamento. A resposta ao clique sai **antes** da
+  edição, e uma resposta sem texto (`ChatReply.text` nulo) só responde ao clique,
+  sem mandar mensagem.
+
+Como os dois 400 abaixo têm o mesmo status, o cliente REST traduz toda recusa da
+Bot API em `TelegramApiException` com a descrição que ela devolveu
+(`@ClientExceptionMapper` em `TelegramApi`), e é pela descrição que o adaptador
+separa um do outro.
 
 Dois desfechos de edição que não são erro:
 
@@ -240,6 +255,16 @@ A operação de texto puro continua existindo: onboarding e recibos não mudam.
 Nada no fluxo de clique é síncrono. O `callback_query` entra no mesmo
 `InboundDispatcher` que a mensagem de texto, e `answerCallbackQuery` sai no fim
 do processamento assíncrono, junto com a edição (regra 3).
+
+### Clique fora de contexto
+
+O `callback_data` cru nunca é texto da pessoa: `InboundPipeline` passa `null`
+como texto a `identity`, para que ele não seja lido como link de convite. Clique
+de quem caiu em onboarding ou na escolha de household (caso que só acontece com
+mensagem velha) é respondido e marcado `IGNORED`, sem entrar no fluxo de
+onboarding. O recibo de erro de falha antes do orquestrador também sai como
+resposta ao clique: todo clique é respondido, inclusive quando o que há a dizer
+é um erro.
 
 ### WhatsApp (Etapa 7)
 
@@ -257,20 +282,37 @@ channel/
     InboundMessageNormalizer   -- + callback_query -> NormalizedInbound com acao
     TelegramActionCodec        -- callback_data <-> ChatAction (o unico lugar
                                   que conhece os codigos curtos)
+    TelegramClickOrigin        -- o identificador de origem: id do clique +
+                                  chat_id:message_id
+    InboundMessageKind         -- TEXT | ACTION, a coluna da V9
   outbound/
     TelegramMessageSender      -- + send com acoes, editMessageText,
                                   answerCallbackQuery
+    TelegramApiException       -- recusa da Bot API com a descricao dela
 ```
+
+O contrato neutro mora fora daqui: `common.message.ChatAction`,
+`common.message.ChatReply` e a segunda operação de
+`identity.spi.OutboundMessagePort`.
 
 ### Testes
 
-- Normalizador: `callback_query` de chat privado vira ação com o
-  `provider_message_id` prefixado; de grupo é descartado.
-- Codec: todo tipo de ação faz ida e volta, e nenhum `callback_data` passa de 64
-  bytes.
-- Reentrega do mesmo `callback_query.id` → uma linha em `inbound_message`, como
-  já é testado para texto.
-- Edição que devolve *message is not modified* não vira recibo de erro.
+- Normalizador (`InboundMessageNormalizerTest`): `callback_query` de chat
+  privado vira ação com o `provider_message_id` prefixado; de grupo e com
+  `callback_data` desconhecido é descartado; texto não muda.
+- Codec (`TelegramActionCodecTest`): todo tipo de ação faz ida e volta, e nenhum
+  `callback_data` passa de 64 bytes.
+- Reentrega do mesmo `callback_query.id` → uma linha em `inbound_message`, com
+  `kind = ACTION`, um efeito e uma resposta ao clique (`IdempotencyTest`), e o
+  cenário "Reentrega do mesmo clique pelo provedor", que entra pelo webhook.
+- Edição que devolve *message is not modified* não vira recibo de erro nem
+  lista repetida; *message can't be edited* vira mensagem nova
+  (`TelegramMessageSenderTest`, com a API do Telegram falsa — o stub de
+  aceitação substitui este adaptador inteiro, e por isso nenhum cenário cobre
+  isto).
+- **Não coberto por teste automatizado**: o adaptador falando com o Telegram de
+  verdade. É a verificação no bot de desenvolvimento que o ROADMAP pede a cada
+  passo.
 
 ## Gatilhos de revisão
 

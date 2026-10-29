@@ -47,7 +47,8 @@ são da Etapa 2a.
 não é etapa — a mudança não abre domínio novo — e mora num arquivo próprio
 justamente para não herdar o `@etapa2` da `Funcionalidade:` de
 `mercado-lista-de-compras`. Roda em `AcoesNoChatAcceptanceTest`, que nasceu
-desabilitado.
+desabilitado, passou pela tag `em-construcao` enquanto o código era escrito e
+entrou no portão do CI em 2026-10-29, com os 15 cenários verdes.
 
 `@saneamento` é a quarta tag, e não é etapa. Marca cenário nascido de auditoria
 ou de uso real depois de a etapa dele já estar fechada
