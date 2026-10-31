@@ -117,6 +117,15 @@ moram.
   lista pelo outro telefone); `Fechar compra` → `60` → recibo com `desfazer`; e
   `desfazer` devolve os itens. Vale também tocar num botão de uma lista de mais de
   48 horas, para ver o desfecho real de "mensagem que não pode ser editada".
+
+  **O primeiro toque no bot (2026-10-30) não fez nada**, e o problema não estava
+  no código. O webhook de produção tinha sido registrado com
+  `allowed_updates=["message"]`, como o `server/README.md` mandava desde a
+  Etapa 1. Com esse filtro, o Telegram não entrega o `callback_query`: o botão
+  aparece, gira e para, sem erro em log. A suíte não tinha como pegar isso,
+  porque o filtro mora na configuração do webhook, fora da aplicação. O README
+  foi corrigido para `["message","callback_query"]`, e o `setWebhook` precisa
+  ser rodado de novo em cada bot já registrado.
 - **Lista longa no Telegram.** O teclado tem dois botões por item mais o rodapé;
   nada limita o tamanho. Uma lista de dezenas de itens deve bater no limite do
   teclado inline antes de bater no de 4096 caracteres `[a verificar contra a

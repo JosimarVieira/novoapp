@@ -100,14 +100,23 @@ ngrok/cloudflared e registre:
 curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
   --data-urlencode "url=https://<seu-host-publico>/webhook/telegram" \
   --data-urlencode "secret_token=$TELEGRAM_WEBHOOK_SECRET" \
-  --data-urlencode 'allowed_updates=["message"]'
+  --data-urlencode 'allowed_updates=["message","callback_query"]'
 
 # conferir
 curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getWebhookInfo"
 ```
 
-`allowed_updates=["message"]` porque esta etapa só trata mensagem: não faz
-sentido receber edição, reação e callback de botão para descartar.
+`allowed_updates` lista só o que a aplicação trata: mensagem e toque em botão
+(`callback_query`, ADR-0040). Edição e reação ficam de fora, porque não faz
+sentido recebê-las só para descartar.
+
+**O filtro é aplicado pelo Telegram, antes da entrega, e fica gravado no
+webhook.** Se faltar `callback_query`, os botões aparecem e o toque não chega
+aqui: o botão gira e nada acontece, sem erro em log nenhum. Quem registrou o
+webhook antes dos botões na lista precisa rodar o `setWebhook` de novo. Confira
+`allowed_updates` no `getWebhookInfo` depois de rodar. Passe o `secret_token`
+de novo, com o mesmo valor da variável de ambiente: o `setWebhook` substitui a
+configuração inteira.
 
 O segredo precisa ser **o mesmo** aqui e na variável de ambiente da aplicação.
 Ao trocá-lo em produção, atualize a variável primeiro e espere o redeploy: até
