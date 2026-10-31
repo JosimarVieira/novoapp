@@ -291,7 +291,17 @@ A ordem:
    isso o toque não chegava à aplicação, e nenhuma suíte tinha como pegar,
    porque o filtro mora na configuração do webhook. Ficaram de fora o toque
    duplo e o botão numa lista de mais de 48 horas.
-4. **Inverter a autoridade da política de confiança** — é o próximo. Guardas
+4. **Desfazer e trocar categoria pelo recibo**
+   ([ADR-0041](docs/01-adr/0041-botoes-de-desfazer-e-trocar-categoria-no-recibo.md),
+   aceita em 2026-10-31) — é o próximo. O recibo de despesa e o de fechamento
+   ganham dois botões: desfazer, que estorna o lançamento **do próprio recibo**
+   (e pede confirmação fora de uma janela provisória de 24 horas), e trocar
+   categoria, por teclado e não por texto. Entra antes do item seguinte contra o
+   que a [decisão aberta #29](docs/DECISOES-ABERTAS.md) recomendava: a troca
+   corrige a categoria que o fechamento pelo carrinho já herda hoje sem
+   perguntar, e o item seguinte muda *quando* um lançamento executa sozinho, não
+   *quais* recibos registram dinheiro. Passos na seção própria, mais abaixo.
+5. **Inverter a autoridade da política de confiança** — depois do recibo. Guardas
    determinísticas sobre o payload decidem o que der para decidir, faixa como
    resíduo. O
    diagnóstico está fechado (o `confianca` do modelo aparece anticorrelacionado
@@ -305,8 +315,8 @@ A ordem:
    ([ADR-0034](docs/01-adr/0034-valor-so-vale-se-a-pessoa-escreveu-digito.md))
    passou a valer para as duas tools que lançam dinheiro. A lista está fechada —
    a ADR pode ser escrita.
-5. **Etapa 2b.**
-6. **Etapa 5**, com gabarito anotado uma vez, sobre um sistema que parou de mudar
+6. **Etapa 2b.**
+7. **Etapa 5**, com gabarito anotado uma vez, sobre um sistema que parou de mudar
    de forma.
 
 Fica deliberadamente de lado até lá, por não ser caminho crítico do elo: a
@@ -413,6 +423,37 @@ que só sabia terminar em despesa) se resolveu com a ação guardada na pendênc
 como a ADR-0029 já prevê. O que foi decidido ao implementar, o que ficou de fora
 e a verificação manual, feita em 2026-10-31, estão na
 [entrega](docs/05-entregas/botoes-na-lista-de-compras.md).
+
+## Desfazer e trocar categoria pelo recibo (planejado em 2026-10-31)
+
+Não é etapa numerada, pelo mesmo motivo que os botões na lista não foram: não
+abre domínio novo. A decisão e as alternativas — inclusive a troca por texto e o
+`desfazer <número>`, as duas descartadas — estão na
+[ADR-0041](docs/01-adr/0041-botoes-de-desfazer-e-trocar-categoria-no-recibo.md);
+o comportamento, nos 18 cenários de
+[`financas-acoes-no-recibo.feature`](docs/03-specs/features/financas-acoes-no-recibo.feature),
+tag `@acoes-no-recibo`, com runner próprio (`AcoesNoReciboAcceptanceTest`)
+nascido desabilitado.
+
+Dois passos, cada um com algo que dá para ver funcionando:
+
+1. **Desfazer pelo botão.** Estorno de um lançamento determinado em `finance`,
+   pelo mesmo evento da [ADR-0032](docs/01-adr/0032-desfazer-alcanca-o-fechamento-inteiro.md);
+   `ChatAction` com referência de lançamento; os recibos de despesa e de
+   fechamento com o botão; a janela e a confirmação. **Entregável**: tocar no
+   recibo de um lançamento estorna aquele lançamento mesmo com outro lançado
+   depois, o recibo vira estornado sem botões, e um recibo fora da janela pede
+   confirmação antes.
+2. **Trocar categoria.** Migration de `transaction_edit`
+   ([ADR-0012](docs/01-adr/0012-edicao-de-lancamento-entre-membros.md)), o
+   teclado de categorias, e o codec levando lançamento e categoria no mesmo
+   botão. **Entregável**: a troca aparece no recibo, fica no histórico com quem
+   trocou, e o próximo fechamento pelo carrinho já pergunta o valor na categoria
+   corrigida. Os 18 cenários verdes, e o `@Disabled` sai.
+
+Abre a [decisão aberta #30](docs/DECISOES-ABERTAS.md) (janela do desfazer pelo
+botão) e encerra a #29. A troca de **conta** pelo recibo, levantada no mesmo dia,
+ficou como [#31](docs/DECISOES-ABERTAS.md): hoje toda família tem uma conta só.
 
 ## Etapa 2b — Tarefas e agenda (~0,5 semana)
 

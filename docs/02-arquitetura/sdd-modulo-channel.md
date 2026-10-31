@@ -2,7 +2,7 @@
 tipo: sdd
 modulo: channel
 status: escrito
-atualizado_em: 2026-10-29
+atualizado_em: 2026-10-31
 adrs:
   - ADR-0002
   - ADR-0005
@@ -11,6 +11,7 @@ adrs:
   - ADR-0022
   - ADR-0036
   - ADR-0040
+  - ADR-0041
 ---
 
 # SDD — Módulo `channel`
@@ -313,6 +314,18 @@ O contrato neutro mora fora daqui: `common.message.ChatAction`,
 - **Não coberto por teste automatizado**: o adaptador falando com o Telegram de
   verdade. É a verificação no bot de desenvolvimento que o ROADMAP pede a cada
   passo.
+
+## Botões no recibo (ADR-0041, aceita em 2026-10-31, ainda não implementado)
+
+O codec ganha os cinco tipos do recibo
+([ADR-0041](../01-adr/0041-botoes-de-desfazer-e-trocar-categoria-no-recibo.md)), e
+o maior deles leva duas referências: lançamento e categoria. Em forma textual,
+dois UUIDs somam 72 caracteres e não cabem nos 64 bytes do `callback_data`.
+Decidido: UUID em base64url, 22 caracteres — código, lançamento e categoria
+ficam em 48 bytes no maior caso. Só o `TelegramActionCodec` conhece esse
+formato; `ChatAction` continua recebendo `UUID`. Os códigos das ações da lista
+podem continuar em forma textual: o decodificador distingue pelo código, e
+botão já enviado continua válido.
 
 ## Gatilhos de revisão
 
