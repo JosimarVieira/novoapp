@@ -20,6 +20,7 @@ Aqui ficam só o mapa e o estado.
 | [`mercado-lista-de-compras`](features/mercado-lista-de-compras.feature) | Lista compartilhada: adicionar por linguagem natural, quantidade, item repetido, "o que está faltando?", marcar comprado, item escrito sem acento, reentrega, remover item, e vários itens numa mensagem só ao marcar e ao remover | 18 | 9 `@etapa2`, 3 `@etapa3`, 6 `@saneamento` |
 | [`elo-fechamento-de-compra`](features/elo-fechamento-de-compra.feature) | O elo lista→despesa: fechar tudo ou em partes, falha atômica, desfazer dos dois lados, fechar sem lista ativa, reentrega, item com valor na mesma mensagem (`açúcar 20`) | 11 | 11 `@etapa3` |
 | [`mercado-botoes-na-lista`](features/mercado-botoes-na-lista.feature) | Botões na lista ([ADR-0040](../01-adr/0040-botoes-na-lista-de-compras-e-carrinho-por-fio.md)): remover e devolver, carrinho do fio, fechar pelo carrinho, categoria do último fechamento, clique em lista desatualizada, toque duplo, reentrega do clique | 15 | 15 `@acoes-no-chat` |
+| [`financas-acoes-no-recibo`](features/financas-acoes-no-recibo.feature) | Botões no recibo ([ADR-0041](../01-adr/0041-botoes-de-desfazer-e-trocar-categoria-no-recibo.md)): desfazer o lançamento do próprio recibo, toque duplo e reentrega, pergunta aberta intacta, confirmação fora da janela, trocar categoria por teclado, histórico de edição, herança da categoria no próximo fechamento, desfazer depois de trocar | 18 | 18 `@acoes-no-recibo` |
 | [`vinculo-de-identidade`](features/vinculo-de-identidade.feature) | Onboarding: primeiro contato cria a própria família; convite entra em família existente; telefone errado, convite expirado, convite reusado, pessoa em duas famílias, convite com confiança média | 11 | 9 `@etapa1`, 1 `@etapa2`, 1 `@saneamento` |
 
 **Não escrita**: tarefas/agenda. É o primeiro trabalho da Etapa 2b, que
@@ -49,6 +50,13 @@ justamente para não herdar o `@etapa2` da `Funcionalidade:` de
 `mercado-lista-de-compras`. Roda em `AcoesNoChatAcceptanceTest`, que nasceu
 desabilitado, passou pela tag `em-construcao` enquanto o código era escrito e
 entrou no portão do CI em 2026-10-29, com os 15 cenários verdes.
+
+`@acoes-no-recibo` é a sexta, criada em 2026-10-31 com a
+[ADR-0041](../01-adr/0041-botoes-de-desfazer-e-trocar-categoria-no-recibo.md),
+aceita no mesmo dia. Pelo mesmo motivo da anterior, não é etapa e tem arquivo
+próprio: `@acoes-no-chat` já está no portão do CI. Roda em
+`AcoesNoReciboAcceptanceTest`, que nasceu desabilitado e perde o `@Disabled` no
+primeiro passo de código.
 
 `@saneamento` é a quarta tag, e não é etapa. Marca cenário nascido de auditoria
 ou de uso real depois de a etapa dele já estar fechada

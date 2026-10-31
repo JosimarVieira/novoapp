@@ -2,7 +2,7 @@
 tipo: sdd
 modulo: finance
 status: escrito
-atualizado_em: 2026-09-16
+atualizado_em: 2026-10-31
 adrs:
   - ADR-0010
   - ADR-0011
@@ -16,6 +16,7 @@ adrs:
   - ADR-0030
   - ADR-0031
   - ADR-0032
+  - ADR-0041
 ---
 
 # SDD — Módulo `finance`
@@ -208,6 +209,28 @@ primeiro.
 O risco desta escolha está declarado no
 [SDD de `shopping`](sdd-modulo-shopping.md): observador de evento não é um
 `import`, então o ArchUnit não vê o acoplamento. A disciplina é humana.
+
+## Estorno determinado e troca de categoria (ADR-0041, aceita em 2026-10-31, ainda não implementado)
+
+Duas operações novas, chamadas pelos botões do recibo
+([ADR-0041](../01-adr/0041-botoes-de-desfazer-e-trocar-categoria-no-recibo.md)):
+
+- **Estornar um lançamento determinado.** Irmã de `reverseLatest`: mesmo
+  carimbo (`reversed_at`, `reversed_by_member_id`) e o mesmo `ExpenseReversed`
+  dentro da transação, de modo que o fechamento reabre pelo observador que já
+  existe em `shopping` (ADR-0032) — sem linha nova lá. Lançamento já estornado
+  não é erro: devolve vazio, e `conversation` redesenha o recibo como estornado.
+- **Trocar a categoria.** Só para categoria de despesa do household, e nunca em
+  lançamento estornado. Grava uma linha em `transaction_edit`
+  ([ADR-0012](../01-adr/0012-edicao-de-lancamento-entre-membros.md)), com
+  `changed_fields_json` no formato `{"category_id": [de, para]}`; trocar para a
+  categoria atual não grava nada. A tabela nasce aqui, numa migration nova, com
+  `household_id` e RLS — até hoje nenhuma correção existia, e ela nunca foi
+  criada.
+
+Como `lastCheckoutCategory` lê a categoria atual do lançamento, a troca num
+fechamento muda a categoria do próximo fechamento pelo botão. É intencional
+(ADR-0041, item 6).
 
 ## Gatilhos de revisão
 

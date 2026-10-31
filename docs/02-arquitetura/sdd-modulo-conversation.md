@@ -2,7 +2,7 @@
 tipo: sdd
 modulo: conversation
 status: escrito
-atualizado_em: 2026-10-29
+atualizado_em: 2026-10-31
 adrs:
   - ADR-0004
   - ADR-0015
@@ -20,6 +20,7 @@ adrs:
   - ADR-0038
   - ADR-0039
   - ADR-0040
+  - ADR-0041
 ---
 
 # SDD — Módulo `conversation`
@@ -287,6 +288,11 @@ nenhum erro visível.
 
 Quando houver mais de uma conta escolhível, isso vira decisão explícita — e
 provavelmente uma correção de registro na ADR-0019.
+
+Em 2026-10-31 a ideia voltou junto com os botões do recibo: nomear a conta e
+oferecer trocar conta, no molde da troca de categoria. Ficou como
+[decisão aberta #31](../DECISOES-ABERTAS.md), pelo mesmo motivo deste parágrafo —
+ainda existe uma conta só.
 
 ## Erros
 
@@ -577,6 +583,31 @@ conversation/
 `5eb5b298b145` antes e depois. Clique não acrescenta tool nem descrição de
 parâmetro, e se o hash tivesse mudado, algo de botão teria vazado para o
 prompt.
+
+## Botões no recibo (ADR-0041, aceita em 2026-10-31, ainda não implementado)
+
+Desenho da [ADR-0041](../01-adr/0041-botoes-de-desfazer-e-trocar-categoria-no-recibo.md);
+comportamento em `financas-acoes-no-recibo.feature`, tag `@acoes-no-recibo`.
+
+- **Onde entra no fluxo**: no mesmo passo 0 das ações da lista — o
+  `ChatActionHandler`, antes da busca por pendência. O desfazer pelo botão não
+  toca a pendência aberta, ao contrário do `desfazer` digitado.
+- **Tipos novos**: `desfazer` e `estornar` (com o lançamento), `trocar` e
+  `voltar` (com o lançamento, só redesenham), `categoria` (com o lançamento e a
+  categoria de destino).
+- **Janela**: `novoapp.conversation.receipt.undo-window`, 24 horas, provisória
+  ([decisão aberta #30](../DECISOES-ABERTAS.md)) — config, nunca constante, como
+  o TTL da pendência e o do carrinho. Lida no toque, contra o `created_at` do
+  lançamento; `estornar` não a consulta.
+- **Estados da mensagem de recibo**: recibo (dois botões), teclado de
+  categorias, confirmação, estornado (sem botões). Todo toque redesenha a partir
+  do banco; lançamento já estornado responde com aviso e o estado estornado.
+- **Quais recibos**: o de despesa (`registerExpense`, por qualquer caminho) e o
+  de fechamento (texto ou carrinho). O recibo precisa conhecer o id do
+  lançamento, que `RegisteredExpense` e o resultado do `checkout` já devolvem
+  `[a verificar ao implementar, no lado do fechamento]`.
+- **O teclado de categorias** é a mesma lista da pergunta do primeiro
+  fechamento (`listExpenseCategories`), com a atual marcada.
 
 ## Gatilhos de revisão
 
