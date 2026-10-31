@@ -23,13 +23,15 @@ verdes, e a suíte inteira: **214 testes, 84 cenários de aceitação, zero
 falhas.** A tag `em-construcao` saiu de `AcoesNoChatAcceptanceTest`, que passou a
 integrar o portão do CI.
 
-**Não atingido ainda: a verificação no Telegram de verdade.** O entregável de
-cada um dos três passos pedia testar no bot de desenvolvimento antes de seguir,
-e isso não foi feito — quem implementou não tinha acesso ao bot nem a um cliente
-do Telegram. Não é detalhe: o adaptador de canal (`callback_query`, teclado
-inline, `editMessageText`, `answerCallbackQuery`) é exatamente a parte que o stub
-de aceitação substitui, e o que o cobre hoje é um teste de unidade com a API do
-Telegram falsa. O roteiro mínimo está em [Lacunas](#lacunas).
+**Verificado no Telegram de verdade em 2026-10-31, depois do merge.** O
+entregável de cada um dos três passos pedia testar no bot de desenvolvimento
+antes de seguir, e isso não foi feito ao implementar — quem implementou não
+tinha acesso ao bot nem a um cliente do Telegram. Não era detalhe: o adaptador
+de canal (`callback_query`, teclado inline, `editMessageText`,
+`answerCallbackQuery`) é exatamente a parte que o stub de aceitação substitui. A
+verificação veio depois, em produção, e o primeiro toque falhou por configuração
+do webhook, não por código. O que foi conferido e o que ficou de fora estão em
+[Lacunas](#lacunas).
 
 Nenhuma ADR nova. `staticFingerprint()` de `MistralMessageInterpreter` deu
 `5eb5b298b145` antes e depois: nada de botão vazou para o prompt, e
@@ -110,13 +112,14 @@ moram.
 
 ## Lacunas
 
-- **Verificação no bot de desenvolvimento, pendente.** Roteiro mínimo, na ordem
-  dos passos: `o que está faltando?` chega com dois botões por item; tocar em
-  `✖ Tirar` redesenha **a mesma** mensagem com `↩ Devolver`; tocar duas vezes no
-  mesmo botão não empilha lista; tocar no carrinho marca só o seu fio (pedir a
-  lista pelo outro telefone); `Fechar compra` → `60` → recibo com `desfazer`; e
-  `desfazer` devolve os itens. Vale também tocar num botão de uma lista de mais de
-  48 horas, para ver o desfecho real de "mensagem que não pode ser editada".
+- **Verificação no Telegram, feita em 2026-10-31 no bot de produção, com dois
+  pontos de fora.** Conferido: colocar e tirar do carrinho; tirar item da lista e
+  devolver; o carrinho marcado só no fio de quem tocou (lista pedida pelo outro
+  telefone); `Fechar compra` → valor → fechamento; e `desfazer` depois do
+  fechamento devolvendo os itens **e** estornando a despesa. Não exercitados:
+  tocar duas vezes no mesmo botão, que não empilha lista, e tocar num botão de
+  uma lista de mais de 48 horas, para ver o desfecho real de "mensagem que não
+  pode ser editada".
 
   **O primeiro toque no bot (2026-10-30) não fez nada**, e o problema não estava
   no código. O webhook de produção tinha sido registrado com
@@ -137,10 +140,11 @@ moram.
   as outras perguntas numeradas.
 - **Prazo do carrinho sem cenário**, de propósito: é config provisória (decisão
   aberta #28), e cenário de prazo cristalizaria um número sem base.
-- **`server/scripts/reset-household-for-family-launch.sql`** (fora do
+- ~~**`server/scripts/reset-household-for-family-launch.sql`** (fora do
   versionamento) apaga `list_item` de um household e não cita
-  `chat_cart_item`. Continua funcionando — a FK do carrinho é `ON DELETE CASCADE`
-  —, mas a lista do que ele apaga no cabeçalho ficou incompleta.
+  `chat_cart_item`.~~ Resolvido em 2026-10-31, quando o script entrou no
+  versionamento: o cabeçalho dele e o da variante para o pgAdmin passaram a citar
+  `chat_cart_item`, que continua saindo pela cascata da FK, sem `DELETE` próprio.
 
 ## Alterações em documento já existente
 
