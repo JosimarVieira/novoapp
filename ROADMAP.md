@@ -286,10 +286,11 @@ A ordem:
    com os 15 cenários verdes e a suíte no portão do CI
    ([entrega](docs/05-entregas/botoes-na-lista-de-compras.md)). Entrou aqui, e
    não depois, porque tira das tools de lista parte do tráfego que o item
-   seguinte teria de calibrar. **Pendente**: a verificação no bot de
-   desenvolvimento do Telegram, que o entregável de cada passo pede e que nenhum
-   teste automatizado substitui — o adaptador de canal é exatamente a parte que
-   o stub de aceitação troca.
+   seguinte teria de calibrar. **Verificado no Telegram em 2026-10-31**, em
+   produção, depois de o `setWebhook` ser refeito com `callback_query` — sem
+   isso o toque não chegava à aplicação, e nenhuma suíte tinha como pegar,
+   porque o filtro mora na configuração do webhook. Ficaram de fora o toque
+   duplo e o botão numa lista de mais de 48 horas.
 4. **Inverter a autoridade da política de confiança** — é o próximo. Guardas
    determinísticas sobre o payload decidem o que der para decidir, faixa como
    resíduo. O
@@ -410,7 +411,7 @@ fechamento. O runner saiu do `@Disabled` no primeiro commit de código para a ta
 `[a verificar ao implementar]` do SDD de `conversation` (a escolha de categoria
 que só sabia terminar em despesa) se resolveu com a ação guardada na pendência,
 como a ADR-0029 já prevê. O que foi decidido ao implementar, o que ficou de fora
-e a verificação manual que falta estão na
+e a verificação manual, feita em 2026-10-31, estão na
 [entrega](docs/05-entregas/botoes-na-lista-de-compras.md).
 
 ## Etapa 2b — Tarefas e agenda (~0,5 semana)
