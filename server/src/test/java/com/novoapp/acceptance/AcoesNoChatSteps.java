@@ -70,8 +70,17 @@ public class AcoesNoChatSteps {
 
     @Dado("^que os itens \"([^\"]*)\", \"([^\"]*)\" e \"([^\"]*)\" estão pendentes, pedidos por \"([^\"]*)\"$")
     public void itemsPendingRequestedBy(String first, String second, String third, String requester) {
+        itemsPendingRequestedBy(List.of(first, second, third), requester);
+    }
+
+    @Dado("^que os itens \"([^\"]*)\" e \"([^\"]*)\" estão pendentes, pedidos por \"([^\"]*)\"$")
+    public void twoItemsPendingRequestedBy(String first, String second, String requester) {
+        itemsPendingRequestedBy(List.of(first, second), requester);
+    }
+
+    private void itemsPendingRequestedBy(List<String> names, String requester) {
         String householdName = world.households.keySet().iterator().next();
-        for (String name : List.of(first, second, third)) {
+        for (String name : names) {
             fixtures.insertListItem(world.households.get(householdName), world.shoppingLists.get(householdName),
                     name, PENDING, world.members.get(requester));
         }

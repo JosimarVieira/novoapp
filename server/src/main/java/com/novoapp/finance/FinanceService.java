@@ -11,6 +11,7 @@ import com.novoapp.finance.repository.TransactionRepository;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
+import jakarta.persistence.LockModeType;
 import jakarta.transaction.Transactional;
 
 import java.time.Clock;
@@ -129,17 +130,45 @@ public class FinanceService {
     @Transactional
     @HouseholdScoped
     public Optional<ReversedExpense> reverseLatest(UUID householdId, UUID memberId) {
-        return transactions.findLatestNotReversed().map(transaction -> {
-            transaction.reversedAt = Instant.now(clock);
-            transaction.reversedByMemberId = memberId;
-            transactions.flush();
+        return transactions.findLatestNotReversed()
+                .map(transaction -> stampReversal(transaction, householdId, memberId));
+    }
 
-            expenseReversed.fire(new ExpenseReversed(transaction.id, householdId));
+    /**
+     * Estorna o lancamento <b>determinado</b> -- o do recibo onde estava o botao
+     * (ADR-0041, item 2) --, e nao o mais recente do household. Irma de
+     * {@link #reverseLatest}, e nao copia: o carimbo e o
+     * {@link ExpenseReversed} sao os mesmos, e por isso o fechamento reabre pelo
+     * observador que ja existe em <code>shopping</code> (ADR-0032), sem linha
+     * nova la.
+     *
+     * <p>Le o lancamento com trava de escrita. Cada mensagem e processada na
+     * propria thread, entao dois toques no mesmo botao podem chegar juntos; sem a
+     * trava os dois veriam o lancamento de pe e os dois o estornariam. Com ela, o
+     * segundo espera o primeiro terminar e o encontra ja estornado.
+     *
+     * @return vazio quando o lancamento nao existe neste household -- inclusive o
+     *         de outro household, que a RLS esconde: o id vem do botao, e nao e
+     *         confiavel -- ou ja foi estornado, por qualquer caminho. Nao e erro:
+     *         quem chama redesenha o recibo como estornado
+     */
+    @Transactional
+    @HouseholdScoped
+    public Optional<ReversedExpense> reverse(UUID householdId, UUID memberId, UUID transactionId) {
+        return Optional.ofNullable(transactions.findById(transactionId, LockModeType.PESSIMISTIC_WRITE))
+                .filter(transaction -> transaction.reversedAt == null)
+                .map(transaction -> stampReversal(transaction, householdId, memberId));
+    }
 
-            Category category = categories.findById(transaction.categoryId);
-            return new ReversedExpense(transaction.id, transaction.amountCents,
-                    category == null ? null : displayNameOf(category), transaction.createdByMemberId);
-        });
+    /**
+     * O lancamento como o recibo o mostra (ADR-0041) -- vazio quando ele nao
+     * existe neste household. Estornado continua aparecendo, marcado: o recibo
+     * de um lancamento estornado e redesenhado como estornado, e nao some.
+     */
+    @Transactional
+    @HouseholdScoped
+    public Optional<ExpenseView> expense(UUID transactionId) {
+        return Optional.ofNullable(transactions.findById(transactionId)).map(this::viewOf);
     }
 
     /**
@@ -165,6 +194,32 @@ public class FinanceService {
         Category parent = category.parentCategoryId == null ? null : categories.findById(category.parentCategoryId);
         return Optional.of(new CategoryView(category.id, category.name, category.parentCategoryId,
                 parent == null ? null : parent.name));
+    }
+
+    /**
+     * O estorno em si, comum aos dois alcances do <code>desfazer</code> -- o
+     * digitado (ADR-0025) e o do botao (ADR-0041). Marca <code>reversed_at</code>
+     * em vez de apagar, e publica {@link ExpenseReversed} dentro da transacao de
+     * quem chamou.
+     */
+    private ReversedExpense stampReversal(Transaction transaction, UUID householdId, UUID memberId) {
+        transaction.reversedAt = Instant.now(clock);
+        transaction.reversedByMemberId = memberId;
+        transactions.flush();
+
+        expenseReversed.fire(new ExpenseReversed(transaction.id, householdId));
+
+        Category category = categories.findById(transaction.categoryId);
+        return new ReversedExpense(transaction.id, transaction.amountCents,
+                category == null ? null : displayNameOf(category), transaction.createdByMemberId);
+    }
+
+    private ExpenseView viewOf(Transaction transaction) {
+        Category category = categories.findById(transaction.categoryId);
+        return new ExpenseView(transaction.id, transaction.amountCents, transaction.categoryId,
+                category == null ? null : displayNameOf(category), transaction.description,
+                transaction.occurredOn, transaction.createdAt, transaction.createdByMemberId,
+                transaction.reversedAt != null);
     }
 
     /** Formato que a ADR-0026 fixou pro recibo quando a categoria tem pai. */

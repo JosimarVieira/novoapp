@@ -87,6 +87,13 @@ public class ExpenseByChatSteps {
         world.categories.put(second, fixtures.insertExpenseCategory(householdId, second));
     }
 
+    @Dado("^que o household \"([^\"]*)\" tem as categorias de despesa \"([^\"]*)\", \"([^\"]*)\" e \"([^\"]*)\"$")
+    public void householdHasThreeExpenseCategories(String householdName, String first, String second,
+                                                   String third) {
+        householdHasExpenseCategories(householdName, first, second);
+        householdAlsoHasExpenseCategory(householdName, third);
+    }
+
     @Dado("^que o household \"([^\"]*)\" também tem a categoria de despesa \"([^\"]*)\"$")
     public void householdAlsoHasExpenseCategory(String householdName, String categoryName) {
         world.categories.put(categoryName,

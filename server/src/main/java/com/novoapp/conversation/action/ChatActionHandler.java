@@ -48,6 +48,10 @@ import java.util.UUID;
  *
  * <p>Nenhum desfecho daqui carrega proveniencia: clique nao gasta modelo, e
  * <code>prompt_version</code> e <code>model_name</code> ficam nulos (ADR-0036).
+ *
+ * <p>Os botoes do recibo de lancamento (ADR-0041) entram pelo mesmo passo 0 e sao
+ * entregues a {@link ReceiptActionHandler}: agem sobre um lancamento, e nao
+ * sobre a lista, e nenhum deles mexe em pendencia.
  */
 @ApplicationScoped
 public class ChatActionHandler {
@@ -73,6 +77,9 @@ public class ChatActionHandler {
     ReceiptFormatter receipts;
 
     @Inject
+    ReceiptActionHandler receiptActions;
+
+    @Inject
     ObjectMapper objectMapper;
 
     public ProcessingOutcome handle(InboundMessage message, ResolvedContext context, Reply reply) {
@@ -83,6 +90,9 @@ public class ChatActionHandler {
             case REMOVE_ITEM -> remove(action.itemId(), context, reply);
             case RESTORE_ITEM -> restore(action.itemId(), message.id(), context, reply);
             case CLOSE_CART -> closeCart(message.id(), context, reply);
+            case UNDO -> receiptActions.undo(action.transactionId(), context, reply);
+            case REVERSE -> receiptActions.reverse(action.transactionId(), context, reply);
+            case BACK -> receiptActions.back(action.transactionId(), context, reply);
         };
     }
 

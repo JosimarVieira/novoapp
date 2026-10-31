@@ -29,7 +29,7 @@ class InboundMessageNormalizerTest {
         assertThat(inbound.externalId()).isEqualTo("4242");
         assertThat(inbound.providerMessageId()).isEqualTo("cb:987654321");
         assertThat(inbound.rawText()).isEqualTo("rm:" + ITEM);
-        assertThat(inbound.action()).isEqualTo(new ChatAction(ChatAction.Type.REMOVE_ITEM, ITEM));
+        assertThat(inbound.action()).isEqualTo(ChatAction.onItem(ChatAction.Type.REMOVE_ITEM, ITEM));
         assertThat(inbound.kind()).isEqualTo(InboundMessageKind.ACTION);
         assertThat(TelegramClickOrigin.decode(inbound.origin()))
                 .contains(new TelegramClickOrigin("987654321", 4242L, 55L));
