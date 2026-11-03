@@ -5,7 +5,6 @@ import io.quarkiverse.cucumber.CucumberOptions;
 import io.quarkiverse.cucumber.CucumberQuarkusTest;
 import io.quarkus.test.common.TestResourceScope;
 import io.quarkus.test.common.WithTestResource;
-import org.junit.jupiter.api.Tag;
 
 /**
  * Desfazer e trocar categoria pelo recibo: os cenarios de
@@ -19,12 +18,15 @@ import org.junit.jupiter.api.Tag;
  *
  * <p>O {@code @Disabled} saiu no primeiro commit de codigo, trocado pela tag
  * {@code em-construcao}: os cenarios aparecem falhando por passo indefinido desde
- * o inicio, o placar sobe passo a passo -- primeiro o desfazer, depois a troca de
- * categoria --, e a suite fica fora do portao do CI enquanto isso, num passo
- * informativo (`.github/workflows/ci.yml`). A tag sai quando os dezoito cenarios
- * estiverem verdes, e ai esta suite entra no portao.
+ * o inicio, e o placar subiu passo a passo -- sete com o desfazer, dezoito com a
+ * troca de categoria. Enquanto a tag existiu, a suite rodou fora do portao do
+ * CI, no passo informativo (`.github/workflows/ci.yml`).
+ *
+ * <p><b>A tag saiu em 2026-11-03, com os dezoito verdes.</b> Sem ela esta suite
+ * integra o portao: uma regressao nos botoes do recibo -- o desfazer que volta a
+ * estornar o mais recente, a troca que deixa de ir para o historico -- volta a
+ * barrar merge.
  */
-@Tag("em-construcao")
 @CucumberOptions(
         features = "../docs/03-specs/features",
         glue = "com.novoapp.acceptance",

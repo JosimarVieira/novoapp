@@ -25,7 +25,7 @@ import java.util.UUID;
  * ja enviado tem de continuar valendo. A de lancamento vai em base64url, 22
  * caracteres (ADR-0041, item 9): e o que deixa espaco para o botao que leva duas
  * referencias. A troca de categoria -- codigo, lancamento e categoria -- fica em
- * 48 bytes, o maior caso; em forma textual seriam 77. O decodificador distingue as
+ * 48 bytes, o maior caso; em forma textual seriam 76. O decodificador distingue as
  * duas formas pelo codigo.
  */
 public final class TelegramActionCodec {

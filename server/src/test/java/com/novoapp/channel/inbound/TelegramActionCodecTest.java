@@ -45,7 +45,7 @@ class TelegramActionCodecTest {
 
     /**
      * O maior botao que existe: a troca de categoria leva o lancamento e a
-     * categoria de destino (ADR-0041, item 9). Em forma textual seriam 77 bytes, e
+     * categoria de destino (ADR-0041, item 9). Em forma textual seriam 76 bytes, e
      * o Telegram recusaria a mensagem inteira.
      */
     @Test

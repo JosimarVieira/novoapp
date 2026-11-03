@@ -2,7 +2,7 @@
 tipo: sdd
 modulo: shopping
 status: escrito
-atualizado_em: 2026-10-29
+atualizado_em: 2026-11-03
 adrs:
   - ADR-0003
   - ADR-0004
@@ -15,6 +15,7 @@ adrs:
   - ADR-0038
   - ADR-0039
   - ADR-0040
+  - ADR-0041
 ---
 
 # SDD — Módulo `shopping`
@@ -382,6 +383,26 @@ O módulo ganha só duas **leituras**:
 
 `ListItemView` passa a carregar o id do item: a lista que vira botões precisa
 dele, e a que vira texto simplesmente o ignora.
+
+## Recibo de fechamento com botões (ADR-0041, implementada em 2026-11-03)
+
+Duas linhas, as duas de leitura, para o recibo do fechamento ter os botões de
+desfazer e de trocar categoria
+([ADR-0041](../01-adr/0041-botoes-de-desfazer-e-trocar-categoria-no-recibo.md)):
+
+- **`CheckoutResult.Closed` carrega o `transactionId`** do lançamento que o
+  fechamento gerou: os botões agem sobre o lançamento daquele recibo.
+- **`itemsClosedBy(householdId, transactionId)`** devolve os itens que o
+  fechamento baixou, para `conversation` redesenhar o recibo de fechamento a
+  partir do banco — no `voltar` e depois da troca de categoria.
+
+**Nenhuma linha para o estorno**, que é o que a ADR afirma ao dizer que
+`shopping` não ganha linha: o desfazer pelo botão reabre o fechamento pelo mesmo
+`ExpenseReversed` e pelo mesmo `ExpenseReversedListener` do desfazer digitado
+(ADR-0032). A troca de categoria também não passa por aqui — e, como
+`lastCheckoutCategory` lê a categoria **atual** do lançamento, corrigir um
+fechamento corrige a herança do próximo fechamento pelo botão sem código novo
+(ADR-0041, item 6).
 
 ## Gatilhos de revisão
 
