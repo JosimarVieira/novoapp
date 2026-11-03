@@ -11,7 +11,8 @@
 -- PASSO 3 -- conferiu? troque a ultima linha por COMMIT e rode o passo 2 de novo.
 --
 -- Apaga do household: pending_action, list_item, list_checkout, shopping_list,
--- transaction, category (chat_cart_item sai pela cascata de list_item). Mantem:
+-- transaction_edit, transaction, category (chat_cart_item sai pela cascata de
+-- list_item). Mantem:
 -- membros, vinculo do Telegram, convites, contas e inbound_message
 -- (idempotencia, ADR-0005; corpus, ADR-0036).
 
@@ -125,6 +126,8 @@ BEGIN
     DELETE FROM list_item      WHERE household_id = target;
     DELETE FROM list_checkout  WHERE household_id = target;
     DELETE FROM shopping_list  WHERE household_id = target;
+    -- O historico de edicao aponta para o lancamento, sem cascata (V11).
+    DELETE FROM transaction_edit WHERE household_id = target;
     -- Num comando so: o estorno aponta para o original (reversal_of_id), e a FK
     -- e conferida no fim do comando, com os dois ja apagados.
     DELETE FROM transaction    WHERE household_id = target;

@@ -4,6 +4,8 @@ import com.novoapp.common.message.ChatAction;
 import com.novoapp.common.message.ChatReply;
 import com.novoapp.common.message.ChatReply.ReplyAction;
 import com.novoapp.conversation.ReceiptFormatter;
+import com.novoapp.finance.CategoryQueryService;
+import com.novoapp.finance.CategoryView;
 import com.novoapp.finance.ExpenseView;
 import com.novoapp.finance.RegisteredExpense;
 import com.novoapp.finance.ReversedExpense;
@@ -15,6 +17,7 @@ import com.novoapp.shopping.ShoppingService;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -23,7 +26,8 @@ import java.util.UUID;
  * O recibo de lancamento como resposta com acoes (ADR-0041): os estados da
  * mensagem de recibo, que os botoes dela redesenham.
  *
- * <p>O recibo, com os botoes; a confirmacao de fora da janela do desfazer; e o
+ * <p>O recibo, com os botoes; o teclado de categorias; a confirmacao de fora da
+ * janela do desfazer; e o
  * estornado, sem botao nenhum -- o recibo de estorno, quando foi o toque que
  * estornou, ou o estado estornado, quando ja estava. Vale para o recibo de
  * despesa e para o de fechamento, venha o lancamento de onde vier.
@@ -46,6 +50,9 @@ public class ReceiptView {
 
     @Inject
     MemberDirectory members;
+
+    @Inject
+    CategoryQueryService categories;
 
     @Inject
     ReceiptFormatter receipts;
@@ -75,6 +82,36 @@ public class ReceiptView {
                 : receipts.checkoutReceipt(locale, expense.amountCents(), expense.categoryDisplayName(),
                         closedItems, shopping.pendingItems(context.householdId()));
         return withButtons(text, expense.transactionId(), locale);
+    }
+
+    /**
+     * O teclado de troca (ADR-0041, item 4): as categorias de despesa da familia,
+     * a mesma lista e na mesma forma da pergunta do primeiro fechamento
+     * (ADR-0040, item 4), a atual marcada, duas por linha, e <code>voltar</code>.
+     * Cada botao leva o lancamento e a categoria de destino -- o estado de
+     * destino, nunca "a proxima". Sem paginacao: familia com mais categorias do
+     * que o teclado comporta e gatilho de revisao da ADR, nao escopo.
+     */
+    public ChatReply categories(ExpenseView expense, Locale locale) {
+        UUID transactionId = expense.transactionId();
+        List<List<ReplyAction>> rows = new ArrayList<>();
+        List<ReplyAction> row = new ArrayList<>();
+        for (CategoryView category : categories.listExpenseCategories()) {
+            row.add(new ReplyAction(
+                    receipts.categoryButton(locale, category.displayName(), category.id().equals(expense.categoryId())),
+                    ChatAction.setCategory(transactionId, category.id())));
+            if (row.size() == 2) {
+                rows.add(row);
+                row = new ArrayList<>();
+            }
+        }
+        if (!row.isEmpty()) {
+            rows.add(row);
+        }
+        rows.add(List.of(new ReplyAction(receipts.backButton(locale),
+                ChatAction.onTransaction(ChatAction.Type.BACK, transactionId))));
+        return ChatReply.of(receipts.askNewCategory(locale, expense.amountCents(), expense.categoryDisplayName()),
+                rows);
     }
 
     /**
@@ -124,13 +161,16 @@ public class ReceiptView {
     }
 
     /**
-     * Uma linha com o botao de desfazer, que leva o lancamento <b>deste</b>
-     * recibo -- e nao "o mais recente", como o <code>desfazer</code> digitado
-     * (ADR-0041, item 2). A dica de desfazer digitado continua no texto.
+     * Uma linha com os dois botoes do recibo (ADR-0041, item 1), que levam o
+     * lancamento <b>deste</b> recibo -- e nao "o mais recente", como o
+     * <code>desfazer</code> digitado (item 2). A dica de desfazer digitado
+     * continua no texto.
      */
     private ChatReply withButtons(String text, UUID transactionId, Locale locale) {
         return ChatReply.of(text, List.of(List.of(
                 new ReplyAction(receipts.undoButton(locale),
-                        ChatAction.onTransaction(ChatAction.Type.UNDO, transactionId)))));
+                        ChatAction.onTransaction(ChatAction.Type.UNDO, transactionId)),
+                new ReplyAction(receipts.changeCategoryButton(locale),
+                        ChatAction.onTransaction(ChatAction.Type.CHANGE_CATEGORY, transactionId)))));
     }
 }

@@ -487,6 +487,29 @@ public class ReceiptFormatter {
         return Messages.get(locale, MessageKey.RECEIPT_BUTTON_UNDO);
     }
 
+    public String changeCategoryButton(Locale locale) {
+        return Messages.get(locale, MessageKey.RECEIPT_BUTTON_CHANGE_CATEGORY);
+    }
+
+    /** O nome da categoria; a atual vem marcada, como o que esta no carrinho. */
+    public String categoryButton(Locale locale, String categoryLabel, boolean current) {
+        return current
+                ? Messages.get(locale, MessageKey.RECEIPT_BUTTON_CATEGORY_CURRENT, categoryLabel)
+                : categoryLabel;
+    }
+
+    /**
+     * O teclado de troca substitui o recibo, entao diz de qual lancamento se
+     * trata: o valor e a categoria de agora.
+     */
+    public String askNewCategory(Locale locale, long amountCents, String categoryDisplayName) {
+        return Messages.get(locale, MessageKey.RECEIPT_CATEGORY_ASK, formatAmount(amountCents), categoryDisplayName);
+    }
+
+    public String categoryUnavailable(Locale locale) {
+        return Messages.get(locale, MessageKey.RECEIPT_NOTICE_CATEGORY_UNAVAILABLE);
+    }
+
     public String reverseButton(Locale locale) {
         return Messages.get(locale, MessageKey.RECEIPT_BUTTON_REVERSE);
     }

@@ -4,6 +4,7 @@ import com.novoapp.common.tenancy.TenantContext;
 import com.novoapp.conversation.PendingActionService;
 import com.novoapp.conversation.PendingIntent;
 import com.novoapp.conversation.cart.ChatCartService;
+import com.novoapp.finance.CategoryChange;
 import com.novoapp.finance.FinanceService;
 import com.novoapp.identity.ContextResolution.ResolvedContext;
 import com.novoapp.shopping.ItemDraft;
@@ -215,6 +216,96 @@ class TenantIsolationTest {
             assertThat(probe.countCartItems()).isZero();
             return null;
         });
+    }
+
+    /**
+     * O historico de edicao (ADR-0012), que a troca de categoria pelo recibo
+     * criou (ADR-0041): cada household so ve as proprias correcoes.
+     */
+    @Test
+    @DisplayName("household A nunca ve o historico de edicao de household B")
+    void doesNotLeakTransactionEdits() {
+        UUID otherCategoryA = fixtures.insertExpenseCategory(householdA, "Farmacia");
+        UUID expenseA = TenantContext.withHousehold(householdA,
+                () -> finance.registerExpense(householdA, memberA, categoryA, 5_000L, null, null).transactionId());
+        TenantContext.withHousehold(householdA,
+                () -> finance.changeCategory(householdA, memberA, expenseA, otherCategoryA));
+
+        assertThat(fixtures.count("SELECT count(*) FROM transaction_edit")).isEqualTo(1);
+        TenantContext.withHousehold(householdA, () -> assertThat(probe.countTransactionEdits()).isEqualTo(1));
+        TenantContext.withHousehold(householdB, () -> assertThat(probe.countTransactionEdits()).isZero());
+    }
+
+    /**
+     * Os ids dos botoes do recibo vem do cliente. Lancamento de outro household
+     * nao e encontrado -- nem para ler, nem para estornar, nem para trocar -- e a
+     * linha dele fica intocada.
+     */
+    @Test
+    @DisplayName("botao com lancamento de outro household nao le, nao estorna e nao troca nada")
+    void receiptButtonsCannotReachAnotherHouseholdsEntry() {
+        UUID expenseB = TenantContext.withHousehold(householdB,
+                () -> finance.registerExpense(householdB, memberB, categoryB, 8_000L, null, null).transactionId());
+
+        TenantContext.withHousehold(householdA, () -> {
+            assertThat(finance.expense(expenseB)).isEmpty();
+            assertThat(finance.reverse(householdA, memberA, expenseB)).isEmpty();
+            assertThat(finance.changeCategory(householdA, memberA, expenseB, categoryA))
+                    .isInstanceOf(CategoryChange.NotFound.class);
+        });
+
+        assertThat(fixtures.query("SELECT reversed_at, category_id FROM transaction WHERE id = ?", expenseB).get(0))
+                .containsExactly(null, categoryB);
+        assertThat(fixtures.count("SELECT count(*) FROM transaction_edit")).isZero();
+    }
+
+    /**
+     * A categoria de destino tambem vem do botao. A FK de
+     * <code>transaction.category_id</code> nao segura isto -- checagem de FK
+     * ignora RLS --, entao quem segura e a leitura sob RLS em
+     * <code>finance</code>.
+     */
+    @Test
+    @DisplayName("nao da pra trocar o proprio lancamento para a categoria de outro household")
+    void cannotChangeIntoAnotherHouseholdsCategory() {
+        UUID expenseA = TenantContext.withHousehold(householdA,
+                () -> finance.registerExpense(householdA, memberA, categoryA, 5_000L, null, null).transactionId());
+
+        CategoryChange change = TenantContext.withHousehold(householdA,
+                () -> finance.changeCategory(householdA, memberA, expenseA, categoryB));
+
+        assertThat(change).isInstanceOf(CategoryChange.CategoryUnavailable.class);
+        assertThat(fixtures.query("SELECT category_id FROM transaction WHERE id = ?", expenseA).get(0).get(0))
+                .isEqualTo(categoryA);
+        assertThat(fixtures.count("SELECT count(*) FROM transaction_edit")).isZero();
+    }
+
+    @Test
+    @DisplayName("historico de edicao com household de outro e recusado pelo banco")
+    void cannotWriteAnEditIntoAnotherHousehold() {
+        UUID expenseA = TenantContext.withHousehold(householdA,
+                () -> finance.registerExpense(householdA, memberA, categoryA, 5_000L, null, null).transactionId());
+
+        assertThatThrownBy(() -> TenantContext.withHousehold(householdA,
+                () -> probe.insertTransactionEdit(householdB, expenseA, memberA)))
+                .hasStackTraceContaining("row-level security");
+    }
+
+    /** Append-only (ADR-0012): correcao errada se corrige com outra linha, nunca reescrevendo. */
+    @Test
+    @DisplayName("o papel de dominio nao reescreve nem apaga historico de edicao")
+    void transactionEditsAreAppendOnly() {
+        UUID otherCategoryA = fixtures.insertExpenseCategory(householdA, "Farmacia");
+        UUID expenseA = TenantContext.withHousehold(householdA,
+                () -> finance.registerExpense(householdA, memberA, categoryA, 5_000L, null, null).transactionId());
+        TenantContext.withHousehold(householdA,
+                () -> finance.changeCategory(householdA, memberA, expenseA, otherCategoryA));
+
+        assertThatThrownBy(() -> TenantContext.withHousehold(householdA, () -> probe.rewriteTransactionEdits()))
+                .hasStackTraceContaining("permission denied");
+        assertThatThrownBy(() -> TenantContext.withHousehold(householdA, () -> probe.deleteTransactionEdits()))
+                .hasStackTraceContaining("permission denied");
+        assertThat(fixtures.count("SELECT count(*) FROM transaction_edit")).isEqualTo(1);
     }
 
     private ResolvedContext contextOf(UUID householdId, String householdName,

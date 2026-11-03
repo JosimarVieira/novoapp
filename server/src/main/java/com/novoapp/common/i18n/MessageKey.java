@@ -102,8 +102,12 @@ public enum MessageKey {
 
     // ----------------------------------------- acoes no recibo (ADR-0041)
     RECEIPT_BUTTON_UNDO("receipt.button.undo"),
+    RECEIPT_BUTTON_CHANGE_CATEGORY("receipt.button.change.category"),
     RECEIPT_BUTTON_REVERSE("receipt.button.reverse"),
     RECEIPT_BUTTON_BACK("receipt.button.back"),
+    RECEIPT_BUTTON_CATEGORY_CURRENT("receipt.button.category.current"),
+    RECEIPT_CATEGORY_ASK("receipt.category.ask"),
+    RECEIPT_NOTICE_CATEGORY_UNAVAILABLE("receipt.notice.category.unavailable"),
     RECEIPT_UNDO_CONFIRM("receipt.undo.confirm"),
     RECEIPT_UNDO_CONFIRM_ITEMS("receipt.undo.confirm.items"),
     RECEIPT_REVERSED_STATE("receipt.reversed.state"),

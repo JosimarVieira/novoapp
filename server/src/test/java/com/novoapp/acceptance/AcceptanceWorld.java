@@ -118,7 +118,7 @@ public class AcceptanceWorld {
      * esta, o lancamento dele e o texto com que chegou -- e esse texto que
      * <code>voltar</code> tem de devolver.
      */
-    record Receipt(long messageId, UUID transactionId, String text) {
+    record Receipt(long messageId, UUID transactionId, String text, String categoryName) {
     }
 
     /** Os recibos pela frase que os gerou: "o recibo de farmácia 30". */
@@ -126,6 +126,13 @@ public class AcceptanceWorld {
 
     /** O recibo de que o cenario esta falando: o ultimo recebido ou tocado. */
     Receipt receiptInFocus;
+
+    /**
+     * Os lancamentos como estavam quando o ultimo recibo chegou: e contra isso que
+     * "nenhum lancamento e alterado" e "nenhum lancamento novo e criado" conferem
+     * o que o toque fez.
+     */
+    List<List<Object>> transactionsAtLastReceipt = List.of();
 
     void reset() {
         fixtures.truncateAll();
@@ -151,6 +158,7 @@ public class AcceptanceWorld {
         chosenOption = null;
         receipts.clear();
         receiptInFocus = null;
+        transactionsAtLastReceipt = List.of();
     }
 
     String externalIdFor(String actor) {

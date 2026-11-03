@@ -23,8 +23,11 @@ import java.util.UUID;
  *        Vem do cliente, e portanto nao e confiavel: quem a usa le o item ou o
  *        lancamento sob RLS (ADR-0003), e id de outro household simplesmente nao
  *        e encontrado
+ * @param categoryId a categoria de destino, so em {@link Type#SET_CATEGORY}: o
+ *        botao leva o estado de destino, e nao "a proxima". Tambem vem do
+ *        cliente, e e lida sob RLS como a referencia
  */
-public record ChatAction(Type type, Reference reference) {
+public record ChatAction(Type type, Reference reference, UUID categoryId) {
 
     public enum Type {
         /** <code>carrinho+</code>: separar o item no carrinho de quem tocou. */
@@ -48,7 +51,18 @@ public record ChatAction(Type type, Reference reference) {
          */
         REVERSE(Reference.Kind.TRANSACTION),
         /** <code>voltar</code>: so redesenha o recibo como ele esta no banco. */
-        BACK(Reference.Kind.TRANSACTION);
+        BACK(Reference.Kind.TRANSACTION),
+        /**
+         * <code>trocar</code>: so redesenha o recibo como o teclado de categorias.
+         * Nao escreve nada -- quem troca e o toque numa categoria.
+         */
+        CHANGE_CATEGORY(Reference.Kind.TRANSACTION),
+        /**
+         * <code>categoria</code>: troca a categoria do lancamento para a do botao,
+         * com historico (ADR-0012). Sem modelo, sem pendencia e sem prazo: a troca
+         * nao destroi nada (ADR-0041, item 4).
+         */
+        SET_CATEGORY(Reference.Kind.TRANSACTION);
 
         private final Reference.Kind reference;
 
@@ -59,6 +73,11 @@ public record ChatAction(Type type, Reference reference) {
         /** O tipo de referencia que o botao leva; nulo so em {@link #CLOSE_CART}. */
         public Reference.Kind reference() {
             return reference;
+        }
+
+        /** So a troca leva duas referencias: o lancamento e a categoria de destino. */
+        public boolean carriesCategory() {
+            return this == SET_CATEGORY;
         }
     }
 
@@ -89,18 +108,27 @@ public record ChatAction(Type type, Reference reference) {
         if (type.reference() != carried) {
             throw new IllegalArgumentException("Acao " + type + " com referencia " + reference);
         }
+        if (type.carriesCategory() != (categoryId != null)) {
+            throw new IllegalArgumentException("Acao " + type + " com categoria " + categoryId);
+        }
     }
 
     public static ChatAction onItem(Type type, UUID itemId) {
-        return new ChatAction(type, new Reference(Reference.Kind.LIST_ITEM, itemId));
+        return new ChatAction(type, new Reference(Reference.Kind.LIST_ITEM, itemId), null);
     }
 
     public static ChatAction onTransaction(Type type, UUID transactionId) {
-        return new ChatAction(type, new Reference(Reference.Kind.TRANSACTION, transactionId));
+        return new ChatAction(type, new Reference(Reference.Kind.TRANSACTION, transactionId), null);
+    }
+
+    /** O botao de uma categoria no teclado de troca: o lancamento e para onde ele vai. */
+    public static ChatAction setCategory(UUID transactionId, UUID categoryId) {
+        return new ChatAction(Type.SET_CATEGORY, new Reference(Reference.Kind.TRANSACTION, transactionId),
+                categoryId);
     }
 
     public static ChatAction closeCart() {
-        return new ChatAction(Type.CLOSE_CART, null);
+        return new ChatAction(Type.CLOSE_CART, null, null);
     }
 
     /** O item da lista em que o botao estava; nulo quando o botao nao e de item. */

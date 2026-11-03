@@ -6,6 +6,7 @@ import com.novoapp.conversation.ProcessingOutcome;
 import com.novoapp.conversation.ProcessingOutcome.Result;
 import com.novoapp.conversation.ReceiptFormatter;
 import com.novoapp.conversation.Reply;
+import com.novoapp.finance.CategoryChange;
 import com.novoapp.finance.ExpenseView;
 import com.novoapp.finance.FinanceService;
 import com.novoapp.finance.ReversedExpense;
@@ -112,6 +113,50 @@ public class ReceiptActionHandler {
     }
 
     /**
+     * <code>trocar</code>: o teclado de categorias no lugar do recibo. Nao
+     * escreve nada, e nao tem janela nem confirmacao: a troca nao destroi nada
+     * (ADR-0041, item 4).
+     */
+    public ProcessingOutcome showCategories(UUID transactionId, ResolvedContext context, Reply reply) {
+        Optional<ExpenseView> expense = finance.expense(transactionId);
+        if (expense.isEmpty() || expense.get().reversed()) {
+            return cannotAct(expense, context, reply);
+        }
+        redraw(reply, view.categories(expense.get(), reply.locale()), null);
+        return interpreted();
+    }
+
+    /**
+     * <code>categoria</code>: a troca em si, com historico (ADR-0012), e o recibo
+     * redesenhado com a categoria nova e os dois botoes. Sem modelo e sem
+     * pendencia: a escolha e um toque num teclado que o proprio bot desenhou, e
+     * nao ha o que interpretar (ADR-0041, alternativas A e F).
+     *
+     * <p>Escolher a categoria que o lancamento ja tem so devolve o recibo. Uma
+     * categoria que saiu do teclado desde que ele foi desenhado vira aviso e o
+     * teclado de agora.
+     */
+    public ProcessingOutcome setCategory(UUID transactionId, UUID categoryId, ResolvedContext context, Reply reply) {
+        return switch (finance.changeCategory(context.householdId(), context.memberId(), transactionId, categoryId)) {
+            case CategoryChange.Changed changed -> {
+                redraw(reply, view.receipt(changed.expense(), context), null);
+                yield executed("categoria", transactionId, changed.expense().categoryDisplayName());
+            }
+            case CategoryChange.Unchanged unchanged -> {
+                redraw(reply, view.receipt(unchanged.expense(), context), null);
+                yield interpreted();
+            }
+            case CategoryChange.CategoryUnavailable unavailable -> {
+                redraw(reply, view.categories(unavailable.expense(), reply.locale()),
+                        receipts.categoryUnavailable(reply.locale()));
+                yield interpreted();
+            }
+            case CategoryChange.AlreadyReversed reversed -> cannotAct(Optional.of(reversed.expense()), context, reply);
+            case CategoryChange.NotFound ignored -> cannotAct(Optional.empty(), context, reply);
+        };
+    }
+
+    /**
      * O estorno determinado e o redesenho como recibo de estorno, sem botoes
      * (ADR-0041, item 2). Os itens de um fechamento voltam para a lista pelo
      * mesmo evento do <code>desfazer</code> digitado (ADR-0032), dentro de
@@ -127,7 +172,7 @@ public class ReceiptActionHandler {
             return cannotAct(finance.expense(transactionId), context, reply);
         }
         redraw(reply, view.reversed(reversed.get(), context), null);
-        return executed(action, transactionId);
+        return executed(action, transactionId, null);
     }
 
     /**
@@ -163,10 +208,13 @@ public class ReceiptActionHandler {
      * chave do <code>desfazer</code> digitado para o lancamento; a coluna
      * <code>kind</code> ja separa clique de texto.
      */
-    private ProcessingOutcome executed(String action, UUID transactionId) {
+    private ProcessingOutcome executed(String action, UUID transactionId, String category) {
         Map<String, Object> intent = new LinkedHashMap<>();
         intent.put("acao", action);
         intent.put("transaction_id", transactionId.toString());
+        if (category != null) {
+            intent.put("categoria", category);
+        }
         return new ProcessingOutcome(Result.EXECUTED, null, json(intent));
     }
 

@@ -15,7 +15,7 @@ import java.util.UUID;
  *
  * <p><b>O unico lugar que conhece os codigos curtos.</b> {@code c+}, {@code c-},
  * {@code rm}, {@code rt}, {@code fx} na lista e {@code dz}, {@code es},
- * {@code vt} no recibo nao existem fora daqui -- se <code>conversation</code>
+ * {@code vt}, {@code tr}, {@code ct} no recibo nao existem fora daqui -- se <code>conversation</code>
  * precisasse ler um deles, a regra 5 do CLAUDE.md estaria furada pelo lado de
  * dentro, e o ArchUnit nao pegaria: e string, nao import.
  *
@@ -24,7 +24,9 @@ import java.util.UUID;
  * 39 no maior caso --, porque ha listas com botoes no Telegram da familia e botao
  * ja enviado tem de continuar valendo. A de lancamento vai em base64url, 22
  * caracteres (ADR-0041, item 9): e o que deixa espaco para o botao que leva duas
- * referencias. O decodificador distingue as duas formas pelo codigo.
+ * referencias. A troca de categoria -- codigo, lancamento e categoria -- fica em
+ * 48 bytes, o maior caso; em forma textual seriam 77. O decodificador distingue as
+ * duas formas pelo codigo.
  */
 public final class TelegramActionCodec {
 
@@ -44,7 +46,9 @@ public final class TelegramActionCodec {
             ChatAction.Type.CLOSE_CART, "fx",
             ChatAction.Type.UNDO, "dz",
             ChatAction.Type.REVERSE, "es",
-            ChatAction.Type.BACK, "vt");
+            ChatAction.Type.BACK, "vt",
+            ChatAction.Type.CHANGE_CATEGORY, "tr",
+            ChatAction.Type.SET_CATEGORY, "ct");
 
     private TelegramActionCodec() {
     }
@@ -52,6 +56,9 @@ public final class TelegramActionCodec {
     public static String encode(ChatAction action) {
         String code = CODES.get(action.type());
         String data = action.reference() == null ? code : code + SEPARATOR + reference(action.reference());
+        if (action.categoryId() != null) {
+            data = data + SEPARATOR + compact(action.categoryId());
+        }
         if (data.getBytes(StandardCharsets.UTF_8).length > MAX_BYTES) {
             // Nao acontece com os tipos de hoje; acontecer seria tipo novo com
             // referencia longa, e o Telegram recusaria a mensagem inteira.
@@ -78,12 +85,15 @@ public final class TelegramActionCodec {
             if (type.reference() == null) {
                 return parts.length == 1 ? Optional.of(ChatAction.closeCart()) : Optional.empty();
             }
-            if (parts.length != 2) {
+            if (parts.length != (type.carriesCategory() ? 3 : 2)) {
                 return Optional.empty();
             }
             return switch (type.reference()) {
                 case LIST_ITEM -> textual(parts[1]).map(itemId -> ChatAction.onItem(type, itemId));
-                case TRANSACTION -> compact(parts[1]).map(transactionId -> ChatAction.onTransaction(type, transactionId));
+                case TRANSACTION -> type.carriesCategory()
+                        ? compact(parts[1]).flatMap(transactionId -> compact(parts[2])
+                                .map(categoryId -> ChatAction.setCategory(transactionId, categoryId)))
+                        : compact(parts[1]).map(transactionId -> ChatAction.onTransaction(type, transactionId));
             };
         }
         return Optional.empty();

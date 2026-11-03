@@ -21,6 +21,7 @@ class TelegramActionCodecTest {
 
     private static final UUID ITEM = UUID.fromString("0f8fad5b-d9cb-469f-a165-70867728950e");
     private static final UUID ENTRY = UUID.fromString("7c9e6679-7425-40de-944b-e07fc1f90ae7");
+    private static final UUID CATEGORY = UUID.fromString("e4eaaaf2-d142-11e1-b3e4-080027620cdd");
 
     @Test
     @DisplayName("todo tipo de acao faz ida e volta, e nenhum callback_data passa de 64 bytes")
@@ -37,9 +38,28 @@ class TelegramActionCodecTest {
     }
 
     @Test
-    @DisplayName("o maior callback_data e o de item: codigo, dois-pontos e UUID")
-    void largestIsThirtyNineBytes() {
+    @DisplayName("o botao de item tem codigo, dois-pontos e UUID textual: 39 bytes")
+    void itemButtonIsThirtyNineBytes() {
         assertThat(TelegramActionCodec.encode(ChatAction.onItem(ChatAction.Type.RESTORE_ITEM, ITEM))).hasSize(39);
+    }
+
+    /**
+     * O maior botao que existe: a troca de categoria leva o lancamento e a
+     * categoria de destino (ADR-0041, item 9). Em forma textual seriam 77 bytes, e
+     * o Telegram recusaria a mensagem inteira.
+     */
+    @Test
+    @DisplayName("o maior callback_data e o da troca de categoria: 48 bytes, dentro dos 64")
+    void largestIsTheCategoryChangeWithinTheLimit() {
+        String data = TelegramActionCodec.encode(ChatAction.setCategory(ENTRY, CATEGORY));
+
+        assertThat(data).matches("ct:[A-Za-z0-9_-]{22}:[A-Za-z0-9_-]{22}");
+        assertThat(data.getBytes(StandardCharsets.UTF_8)).hasSize(48);
+        assertThat(data.getBytes(StandardCharsets.UTF_8).length).isLessThanOrEqualTo(TelegramActionCodec.MAX_BYTES);
+        for (ChatAction.Type type : ChatAction.Type.values()) {
+            assertThat(TelegramActionCodec.encode(actionOf(type)).getBytes(StandardCharsets.UTF_8).length)
+                    .as(type.name()).isLessThanOrEqualTo(48);
+        }
     }
 
     /**
@@ -93,6 +113,9 @@ class TelegramActionCodecTest {
         assertThat(TelegramActionCodec.decode("dz:" + compact + "A")).isEmpty();
         assertThat(TelegramActionCodec.decode("dz:" + compact.substring(0, 21) + "!")).isEmpty();
         assertThat(TelegramActionCodec.decode(valid + ":" + compact)).isEmpty();
+        // A troca sem a categoria, e a categoria fora da forma compacta.
+        assertThat(TelegramActionCodec.decode("ct:" + compact)).isEmpty();
+        assertThat(TelegramActionCodec.decode("ct:" + compact + ":" + CATEGORY)).isEmpty();
         // O ultimo caractere de 22 so carrega dois bits: trocar os quatro que
         // sobram daria os mesmos bytes, numa escrita que o codec nunca produz.
         assertThat(TelegramActionCodec.decode("dz:" + compact.substring(0, 21) + nonCanonical(compact.charAt(21))))
@@ -105,7 +128,9 @@ class TelegramActionCodecTest {
         }
         return switch (type.reference()) {
             case LIST_ITEM -> ChatAction.onItem(type, ITEM);
-            case TRANSACTION -> ChatAction.onTransaction(type, ENTRY);
+            case TRANSACTION -> type.carriesCategory()
+                    ? ChatAction.setCategory(ENTRY, CATEGORY)
+                    : ChatAction.onTransaction(type, ENTRY);
         };
     }
 

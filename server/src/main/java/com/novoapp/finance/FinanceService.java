@@ -1,12 +1,16 @@
 package com.novoapp.finance;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.novoapp.common.tenancy.HouseholdScoped;
 import com.novoapp.finance.entity.Account;
 import com.novoapp.finance.entity.Category;
 import com.novoapp.finance.entity.EntryKind;
 import com.novoapp.finance.entity.Transaction;
+import com.novoapp.finance.entity.TransactionEdit;
 import com.novoapp.finance.entity.TransactionSource;
 import com.novoapp.finance.repository.CategoryRepository;
+import com.novoapp.finance.repository.TransactionEditRepository;
 import com.novoapp.finance.repository.TransactionRepository;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
@@ -17,6 +21,8 @@ import jakarta.transaction.Transactional;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -27,9 +33,10 @@ import java.util.UUID;
  * Etapa 4 em diante, pelo REST do Vue -- a mesma camada de servico, regra 4 do
  * CLAUDE.md.
  *
- * <p>Cartao/fatura (ADR-0011), correcao de campo com historico (ADR-0012,
- * <code>transaction_edit</code>) e metas (ADR-0017) continuam fora: nenhum
- * cenario desta etapa os exercita.
+ * <p>Correcao de campo com historico (ADR-0012, <code>transaction_edit</code>)
+ * existe para um campo so, a categoria, trocada pelo recibo (ADR-0041); valor e
+ * descricao entram com a tela de correcao da Etapa 4. Cartao/fatura (ADR-0011) e
+ * metas (ADR-0017) continuam fora: nenhum cenario os exercita.
  */
 @ApplicationScoped
 public class FinanceService {
@@ -42,6 +49,12 @@ public class FinanceService {
 
     @Inject
     TransactionRepository transactions;
+
+    @Inject
+    TransactionEditRepository edits;
+
+    @Inject
+    ObjectMapper objectMapper;
 
     @Inject
     Clock clock;
@@ -168,6 +181,57 @@ public class FinanceService {
     }
 
     /**
+     * Troca a categoria de um lancamento pelo recibo (ADR-0041, item 4), com uma
+     * linha no historico de edicao: quem trocou, quando, e de qual para qual
+     * (ADR-0012). Qualquer membro troca lancamento de qualquer outro do mesmo
+     * household, como no estorno.
+     *
+     * <p>A ordem das checagens e a do que o botao carrega. Primeiro o lancamento,
+     * lido com trava de escrita: dois toques concorrentes em categorias
+     * diferentes gravariam, sem ela, duas edicoes "de Farmacia" -- e a segunda
+     * mentiria sobre de onde saiu. Lancamento inexistente ou estornado decide o
+     * desfecho antes de a categoria importar. So entao a categoria, que tambem
+     * vem do cliente: tem de ser de despesa, do household (a RLS esconde a de
+     * outro, e a FK do banco nao segura isso -- checagem de FK ignora RLS) e em
+     * uso.
+     *
+     * <p>Escolher a categoria que o lancamento ja tem nao grava nada: nao houve
+     * correcao.
+     */
+    @Transactional
+    @HouseholdScoped
+    public CategoryChange changeCategory(UUID householdId, UUID memberId, UUID transactionId, UUID categoryId) {
+        Transaction transaction = transactions.findById(transactionId, LockModeType.PESSIMISTIC_WRITE);
+        if (transaction == null) {
+            return new CategoryChange.NotFound();
+        }
+        if (transaction.reversedAt != null) {
+            return new CategoryChange.AlreadyReversed(viewOf(transaction));
+        }
+        Category category = categories.findById(categoryId);
+        if (category == null || category.kind != EntryKind.EXPENSE || category.archivedAt != null) {
+            return new CategoryChange.CategoryUnavailable(viewOf(transaction));
+        }
+        if (category.id.equals(transaction.categoryId)) {
+            return new CategoryChange.Unchanged(viewOf(transaction));
+        }
+
+        TransactionEdit edit = new TransactionEdit();
+        edit.householdId = householdId;
+        edit.transactionId = transaction.id;
+        edit.editedByMemberId = memberId;
+        edit.editedAt = Instant.now(clock);
+        edit.changedFieldsJson = changedField("category_id", transaction.categoryId, category.id);
+        transaction.categoryId = category.id;
+        edits.persist(edit);
+        // Flush dentro do escopo, pelo mesmo motivo de registerExpense: no commit
+        // o SET LOCAL ROLE ja voltou, e o papel de fora nao escreve aqui.
+        transactions.flush();
+
+        return new CategoryChange.Changed(viewOf(transaction));
+    }
+
+    /**
      * O lancamento como o recibo o mostra (ADR-0041) -- vazio quando ele nao
      * existe neste household. Estornado continua aparecendo, marcado: o recibo
      * de um lancamento estornado e redesenhado como estornado, e nao some.
@@ -243,6 +307,19 @@ public class FinanceService {
                 category == null ? null : displayNameOf(category), transaction.description,
                 transaction.occurredOn, transaction.createdAt, transaction.createdByMemberId,
                 transaction.reversedAt, transaction.reversedByMemberId);
+    }
+
+    /**
+     * O diff da ADR-0012: {@code {"campo": [de, para]}}. Sem schema no banco, de
+     * proposito; e aqui que ele tem de sair coerente. Falhar aqui derruba a troca
+     * inteira -- correcao sem historico nao existe.
+     */
+    private String changedField(String field, UUID from, UUID to) {
+        try {
+            return objectMapper.writeValueAsString(Map.of(field, List.of(from.toString(), to.toString())));
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Nao foi possivel montar o historico de edicao de " + field, e);
+        }
     }
 
     /** Formato que a ADR-0026 fixou pro recibo quando a categoria tem pai. */

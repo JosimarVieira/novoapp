@@ -93,6 +93,8 @@ public class ChatActionHandler {
             case UNDO -> receiptActions.undo(action.transactionId(), context, reply);
             case REVERSE -> receiptActions.reverse(action.transactionId(), context, reply);
             case BACK -> receiptActions.back(action.transactionId(), context, reply);
+            case CHANGE_CATEGORY -> receiptActions.showCategories(action.transactionId(), context, reply);
+            case SET_CATEGORY -> receiptActions.setCategory(action.transactionId(), action.categoryId(), context, reply);
         };
     }
 

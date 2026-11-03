@@ -1,5 +1,7 @@
 package com.novoapp.acceptance;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.novoapp.common.i18n.MessageKey;
 import com.novoapp.common.i18n.Messages;
 import com.novoapp.common.message.ChatAction;
@@ -26,6 +28,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -64,6 +67,16 @@ public class AcoesNoReciboSteps {
 
     @Inject
     StubOutboundMessagePort outbound;
+
+    @Inject
+    ObjectMapper objectMapper;
+
+    /**
+     * A mensagem do recibo de um fechamento plantado como historico. Ele nao
+     * passou pelo chat, entao nao ha recibo dele no fio do cenario: o toque em
+     * "trocar" e o que a pessoa faria no recibo que ficou la atras.
+     */
+    private static final long PLANTED_RECEIPT_MESSAGE = 1L;
 
     /**
      * A janela vem da config, e nunca de um numero escrito aqui: 24 horas e valor
@@ -132,6 +145,34 @@ public class AcoesNoReciboSteps {
         tapsUndo(actor, text);
     }
 
+    @Dado("^que \"([^\"]*)\" trocou a categoria de \"([^\"]*)\" para \"([^\"]*)\" pelo recibo$")
+    public void changedCategoryByReceipt(String actor, String text, String categoryName) {
+        tapsChangeCategory(actor, text);
+        choosesCategory(actor, categoryName);
+        assertThat(entry(focus().transactionId()).categoryName()).isEqualTo(categoryName);
+        interpreter.resetCallCount();
+    }
+
+    /**
+     * O fechamento plantado por {@code AcoesNoChatSteps} como historico nao tem
+     * recibo no fio do cenario. O toque em "trocar" e o que a pessoa faria no
+     * recibo dele, la atras -- montado aqui com o lancamento plantado; o toque na
+     * categoria e no teclado que o bot de fato desenhou em resposta.
+     */
+    @Dado("^que \"([^\"]*)\" trocou a categoria desse fechamento para \"([^\"]*)\" pelo recibo$")
+    public void changedCategoryOfPlantedCheckout(String actor, String categoryName) {
+        assertThat(world.plantedTransactions).as("um fechamento plantado").hasSize(1);
+        UUID planted = world.plantedTransactions.iterator().next();
+        world.receiptInFocus = new AcceptanceWorld.Receipt(PLANTED_RECEIPT_MESSAGE, planted, null,
+                entry(planted).categoryName());
+        world.tap(actor, new AcceptanceWorld.Button(PLANTED_RECEIPT_MESSAGE, new ReplyAction(
+                Messages.get(Messages.DEFAULT, MessageKey.RECEIPT_BUTTON_CHANGE_CATEGORY),
+                ChatAction.onTransaction(ChatAction.Type.CHANGE_CATEGORY, planted))));
+        choosesCategory(actor, categoryName);
+        assertThat(entry(planted).categoryName()).isEqualTo(categoryName);
+        interpreter.resetCallCount();
+    }
+
     // ------------------------------------------------------------------
     // Toques
     // ------------------------------------------------------------------
@@ -169,6 +210,32 @@ public class AcoesNoReciboSteps {
         world.tapDeliveredTwice(actor, button(receiptOf(text), ChatAction.Type.UNDO));
     }
 
+    @Quando("^\"([^\"]*)\" toca no botão de trocar categoria do recibo de \"([^\"]*)\"$")
+    public void tapsChangeCategory(String actor, String text) {
+        world.tap(actor, button(receiptOf(text), ChatAction.Type.CHANGE_CATEGORY));
+    }
+
+    @Quando("^\"([^\"]*)\" toca no botão de trocar categoria do recibo do fechamento$")
+    public void tapsChangeCategoryOnCheckoutReceipt(String actor) {
+        world.tap(actor, button(checkoutReceipt(), ChatAction.Type.CHANGE_CATEGORY));
+    }
+
+    /** No teclado que o bot desenhou no lugar do recibo, o botao daquela categoria. */
+    @Quando("^\"([^\"]*)\" escolhe a categoria \"([^\"]*)\"$")
+    public void choosesCategory(String actor, String categoryName) {
+        UUID categoryId = world.categories.get(categoryName);
+        assertThat(categoryId).as("categoria %s do household", categoryName).isNotNull();
+        AcceptanceWorld.Receipt receipt = focus();
+        StubOutboundMessagePort.Sent keyboard = outbound.current(receipt.messageId())
+                .orElseThrow(() -> new AssertionError("a mensagem do recibo sumiu do fio"));
+        ReplyAction chosen = keyboard.actions().stream().flatMap(List::stream)
+                .filter(button -> button.action().type() == ChatAction.Type.SET_CATEGORY)
+                .filter(button -> categoryId.equals(button.action().categoryId()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("o teclado nao oferece %s: %s".formatted(categoryName, keyboard)));
+        world.tap(actor, new AcceptanceWorld.Button(receipt.messageId(), chosen));
+    }
+
     @Quando("^\"([^\"]*)\" toca no botão de estornar$")
     public void tapsReverse(String actor) {
         world.tap(actor, button(focus(), ChatAction.Type.REVERSE));
@@ -187,6 +254,72 @@ public class AcoesNoReciboSteps {
     public void expenseStillStanding(String amount) {
         assertThat(fixtures.count("SELECT count(*) FROM transaction WHERE amount_cents = ? AND reversed_at IS NULL",
                 cents(amount))).isEqualTo(1);
+    }
+
+    @E("^a despesa de R\\$ ([\\d.,]+) (?:passa a estar|continua) na categoria \"([^\"]*)\"$")
+    public void expenseIsInCategory(String amount, String categoryName) {
+        List<List<Object>> rows = fixtures.query("""
+                SELECT c.name FROM transaction t JOIN category c ON c.id = t.category_id
+                WHERE t.amount_cents = ? AND t.reversed_at IS NULL""", cents(amount));
+        assertThat(rows).as("uma despesa de pe de R$ %s", amount).hasSize(1);
+        assertThat(rows.get(0).get(0)).isEqualTo(categoryName);
+    }
+
+    @E("^a despesa estornada está na categoria \"([^\"]*)\"$")
+    public void reversedExpenseIsInCategory(String categoryName) {
+        List<List<Object>> rows = fixtures.query("""
+                SELECT c.name FROM transaction t JOIN category c ON c.id = t.category_id
+                WHERE t.reversed_at IS NOT NULL""");
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0).get(0)).isEqualTo(categoryName);
+    }
+
+    /** Os lancamentos como estavam quando o recibo chegou: categoria, valor e estorno. */
+    @E("^nenhum lançamento é alterado$")
+    public void noEntryChanged() {
+        assertThat(transactionsSnapshot()).isEqualTo(world.transactionsAtLastReceipt);
+        historyHasNoChange();
+    }
+
+    @E("^nenhum lançamento novo é criado$")
+    public void noNewEntry() {
+        assertThat(fixtures.query("SELECT id FROM transaction ORDER BY id"))
+                .isEqualTo(world.transactionsAtLastReceipt.stream().map(row -> List.of(row.get(0))).toList());
+    }
+
+    @E("^os itens \"([^\"]*)\" e \"([^\"]*)\" continuam com status comprado$")
+    public void itemsStillPurchased(String first, String second) {
+        for (String name : List.of(first, second)) {
+            assertThat(fixtures.query("SELECT status FROM list_item WHERE name = ?", name))
+                    .as(name).containsExactly(List.of("PURCHASED"));
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Historico de edicao (ADR-0012)
+    // ------------------------------------------------------------------
+
+    @E("^o histórico de edição registra que \"([^\"]*)\" trocou a categoria de \"([^\"]*)\" para \"([^\"]*)\"$")
+    public void historyRecordsTheChange(String member, String from, String to) throws Exception {
+        List<List<Object>> rows = fixtures.query("""
+                SELECT household_id, transaction_id, edited_by_member_id, edited_at, changed_fields_json
+                FROM transaction_edit""");
+        assertThat(rows).as("uma linha por troca").hasSize(1);
+        List<Object> edit = rows.get(0);
+        assertThat(edit.get(0)).isEqualTo(world.households.values().iterator().next());
+        assertThat(edit.get(1)).isEqualTo(focus().transactionId());
+        assertThat(edit.get(2)).isEqualTo(world.members.get(member));
+        assertThat(edit.get(3)).isNotNull();
+        Map<String, List<String>> changed = objectMapper.readValue((String) edit.get(4),
+                new TypeReference<Map<String, List<String>>>() {
+                });
+        assertThat(changed).containsExactly(Map.entry("category_id",
+                List.of(world.categories.get(from).toString(), world.categories.get(to).toString())));
+    }
+
+    @E("^o histórico de edição não registra nenhuma troca$")
+    public void historyHasNoChange() {
+        assertThat(fixtures.count("SELECT count(*) FROM transaction_edit")).isZero();
     }
 
     @E("^nenhum lançamento é estornado$")
@@ -240,6 +373,76 @@ public class AcoesNoReciboSteps {
                 DAY.format(entry.occurredOn()), categoryName, "R$ " + amount));
     }
 
+    @E("^o recibo de \"([^\"]*)\" tem um botão de desfazer e um botão de trocar categoria$")
+    public void receiptHasBothButtons(String actor) {
+        StubOutboundMessagePort.Sent receipt = lastShown(actor);
+        assertThat(receipt.replaced()).as("recibo e mensagem nova").isFalse();
+        List<List<Object>> standing = fixtures.query("SELECT id FROM transaction WHERE reversed_at IS NULL").stream()
+                .filter(row -> !world.plantedTransactions.contains(row.get(0)))
+                .toList();
+        assertThat(standing).hasSize(1);
+        UUID transactionId = (UUID) standing.get(0).get(0);
+        world.receiptInFocus = new AcceptanceWorld.Receipt(receipt.messageId(), transactionId, receipt.text(),
+                entry(transactionId).categoryName());
+        assertThat(buttonTypes(receipt))
+                .containsExactlyInAnyOrder(ChatAction.Type.UNDO, ChatAction.Type.CHANGE_CATEGORY);
+    }
+
+    /** "Volta a ser o recibo": o mesmo texto com que ele chegou, e os dois botoes (ADR-0041, item 3). */
+    @E("^a mesma mensagem de \"([^\"]*)\" volta a ser o recibo, com o botão de desfazer e o de trocar categoria$")
+    public void sameMessageBackToReceipt(String actor) {
+        StubOutboundMessagePort.Sent message = sameMessageUpdated(actor);
+        assertThat(message.text()).isEqualTo(focus().text());
+        assertThat(buttonTypes(message))
+                .containsExactlyInAnyOrder(ChatAction.Type.UNDO, ChatAction.Type.CHANGE_CATEGORY);
+    }
+
+    /**
+     * O recibo de antes, com a categoria nova no lugar da antiga: e o mesmo
+     * lancamento, corrigido, e nao um recibo de outra coisa.
+     */
+    @E("^a mesma mensagem de \"([^\"]*)\" volta a ser o recibo, mostrando \"([^\"]*)\", com o botão de desfazer e o de trocar categoria$")
+    public void sameMessageBackToReceiptShowing(String actor, String categoryName) {
+        StubOutboundMessagePort.Sent message = sameMessageUpdated(actor);
+        AcceptanceWorld.Receipt receipt = focus();
+        assertThat(message.text()).isEqualTo(receipt.text().replace(receipt.categoryName(), categoryName));
+        assertThat(buttonTypes(message))
+                .containsExactlyInAnyOrder(ChatAction.Type.UNDO, ChatAction.Type.CHANGE_CATEGORY);
+    }
+
+    /** Uma por categoria de despesa da familia, e nenhuma outra; todas levam o lancamento do recibo. */
+    @E("^a mesma mensagem de \"([^\"]*)\" é atualizada com um botão por categoria de despesa do household$")
+    public void sameMessageShowsCategories(String actor) {
+        StubOutboundMessagePort.Sent message = sameMessageUpdated(actor);
+        List<UUID> offered = message.actions().stream().flatMap(List::stream)
+                .filter(button -> button.action().type() == ChatAction.Type.SET_CATEGORY)
+                .map(button -> button.action().categoryId())
+                .toList();
+        List<UUID> expense = fixtures.query("""
+                SELECT id FROM category WHERE kind = 'EXPENSE' AND archived_at IS NULL AND household_id = ?""",
+                world.households.values().iterator().next()).stream().map(row -> (UUID) row.get(0)).toList();
+        assertThat(offered).containsExactlyInAnyOrderElementsOf(expense);
+        buttonTypes(message);
+    }
+
+    @E("^a categoria \"([^\"]*)\" aparece marcada como a atual$")
+    public void categoryMarkedAsCurrent(String categoryName) {
+        UUID current = world.categories.get(categoryName);
+        for (ReplyAction button : lastShown(world.currentActor).actions().stream().flatMap(List::stream)
+                .filter(button -> button.action().type() == ChatAction.Type.SET_CATEGORY).toList()) {
+            String name = (String) fixtures.query("SELECT name FROM category WHERE id = ?",
+                    button.action().categoryId()).get(0).get(0);
+            assertThat(button.label()).as(name).isEqualTo(current.equals(button.action().categoryId())
+                    ? Messages.get(Messages.DEFAULT, MessageKey.RECEIPT_BUTTON_CATEGORY_CURRENT, name)
+                    : name);
+        }
+    }
+
+    @E("^a mensagem tem um botão de voltar$")
+    public void messageHasBack() {
+        assertThat(buttonTypes(lastShown(world.currentActor))).contains(ChatAction.Type.BACK);
+    }
+
     @E("^a mensagem tem um botão de estornar e um botão de voltar$")
     public void messageHasReverseAndBack() {
         assertThat(buttonTypes(lastShown(world.currentActor)))
@@ -283,9 +486,14 @@ public class AcoesNoReciboSteps {
                 .as("o botao de desfazer do recibo leva o lancamento dele")
                 .containsExactly(transactionId);
         AcceptanceWorld.Receipt receipt = new AcceptanceWorld.Receipt(message.messageId(), transactionId,
-                message.text());
+                message.text(), entry(transactionId).categoryName());
         world.receipts.put(text, receipt);
         world.receiptInFocus = receipt;
+        world.transactionsAtLastReceipt = transactionsSnapshot();
+    }
+
+    private List<List<Object>> transactionsSnapshot() {
+        return fixtures.query("SELECT id, category_id, amount_cents, reversed_at FROM transaction ORDER BY id");
     }
 
     private AcceptanceWorld.Receipt receiptOf(String text) {
