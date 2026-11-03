@@ -12,6 +12,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -204,10 +205,9 @@ public class ReceiptFormatter {
     }
 
     /**
-     * O recibo de estorno pelas partes. E tambem o estado "estornado" da mensagem
-     * de recibo (ADR-0041): o botao que estorna redesenha o recibo como recibo de
-     * estorno, e o botao de um lancamento que ja estava estornado o redesenha
-     * igual.
+     * O recibo de estorno pelas partes. E tambem o que o botao que acabou de
+     * estornar desenha no lugar do recibo (ADR-0041, item 2). Lancamento que ja
+     * estava estornado tem texto proprio, {@link #reversedState}.
      */
     public String reversalReceipt(String categoryDisplayName, long amountCents, String createdByName,
                                   List<String> reopenedItems, ResolvedContext context) {
@@ -500,11 +500,51 @@ public class ReceiptFormatter {
      * categoria e o valor -- o que vai sumir --, antes do segundo toque. A data e
      * a do lancamento, que e como a pessoa o reconhece; a janela conta de quando
      * ele foi gravado, mas pelo chat as duas coincidem.
+     *
+     * <p>A confirmacao substitui o recibo, entao traz o que ele dizia e que
+     * identifica um lancamento antigo: a descricao, quando ha, e -- num
+     * fechamento -- os itens que voltam para a lista junto com o estorno
+     * (ADR-0032). Sem isso, tres itens voltariam a ficar pendentes sem que quem
+     * confirmou soubesse.
+     *
+     * @param closedItems vazio quando o lancamento nao veio de fechamento
      */
     public String confirmReversal(Locale locale, LocalDate occurredOn, String categoryDisplayName,
-                                  long amountCents) {
-        return Messages.get(locale, MessageKey.RECEIPT_UNDO_CONFIRM,
-                DAY.format(occurredOn), categoryDisplayName, formatAmount(amountCents));
+                                  long amountCents, String description, List<String> closedItems) {
+        StringBuilder question = new StringBuilder(Messages.get(locale, MessageKey.RECEIPT_UNDO_CONFIRM,
+                DAY.format(occurredOn), categoryDisplayName, formatAmount(amountCents)));
+        if (description != null) {
+            question.append(Messages.get(locale, MessageKey.EXPENSE_RECEIPT_DESCRIPTION, description));
+        }
+        if (!closedItems.isEmpty()) {
+            question.append(Messages.get(locale, MessageKey.RECEIPT_UNDO_CONFIRM_ITEMS,
+                    bulleted(locale, closedItems)));
+        }
+        return question.toString();
+    }
+
+    /**
+     * O recibo de um lancamento que ja estava estornado quando o botao foi tocado
+     * (ADR-0041, item 7). Nao e o recibo de estorno: "Estornei" diria que este
+     * toque estornou, e quem estornou pode ter sido outra pessoa pelo
+     * <code>desfazer</code> digitado.
+     *
+     * @param reversedByName nulo quando quem estornou e quem esta lendo
+     * @param reopenedItems o que voltou para a lista, num fechamento
+     */
+    public String reversedState(Instant reversedAt, String categoryDisplayName, long amountCents,
+                                String reversedByName, List<String> reopenedItems, Locale locale) {
+        StringBuilder receipt = new StringBuilder(Messages.get(locale, MessageKey.RECEIPT_REVERSED_STATE,
+                DAY.format(reversedAt.atZone(ZoneId.systemDefault())), categoryDisplayName,
+                formatAmount(amountCents)));
+        if (reversedByName != null) {
+            receipt.append(Messages.get(locale, MessageKey.RECEIPT_REVERSED_STATE_BY, reversedByName));
+        }
+        receipt.append(Messages.get(locale, MessageKey.REVERSAL_RECEIPT_FOOTER));
+        if (!reopenedItems.isEmpty()) {
+            receipt.append(Messages.get(locale, MessageKey.CHECKOUT_REVERSAL_ITEMS, bulleted(locale, reopenedItems)));
+        }
+        return receipt.toString();
     }
 
     /**
@@ -516,11 +556,15 @@ public class ReceiptFormatter {
     }
 
     /**
-     * Botao de um lancamento que nao existe neste household -- apagado por um
-     * script de limpeza, ou de um id que nao veio do bot.
+     * Botao de um lancamento que nao existe no household ativo -- apagado por um
+     * script de limpeza, de um id que nao veio do bot, ou de outra familia de quem
+     * tem mais de uma. Nesse ultimo caso o aviso nomeia onde o bot procurou: e o
+     * que a ADR-0007 exige para erro de contexto ficar visivel.
      */
-    public String entryNotFound(Locale locale) {
-        return Messages.get(locale, MessageKey.RECEIPT_NOTICE_NOT_FOUND);
+    public String entryNotFound(ResolvedContext context) {
+        return context.multipleHouseholds()
+                ? Messages.get(context.locale(), MessageKey.RECEIPT_NOTICE_NOT_FOUND_HOUSEHOLD, context.householdName())
+                : Messages.get(context.locale(), MessageKey.RECEIPT_NOTICE_NOT_FOUND);
     }
 
     // ------------------------------------------------------------------

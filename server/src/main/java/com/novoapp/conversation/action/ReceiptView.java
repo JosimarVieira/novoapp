@@ -24,8 +24,9 @@ import java.util.UUID;
  * mensagem de recibo, que os botoes dela redesenham.
  *
  * <p>O recibo, com os botoes; a confirmacao de fora da janela do desfazer; e o
- * estornado, sem botao nenhum. Vale para o recibo de despesa e para o de
- * fechamento, venha o lancamento de onde vier.
+ * estornado, sem botao nenhum -- o recibo de estorno, quando foi o toque que
+ * estornou, ou o estado estornado, quando ja estava. Vale para o recibo de
+ * despesa e para o de fechamento, venha o lancamento de onde vier.
  *
  * <p><b>Redesenho sempre relido do banco</b>, como a lista em
  * {@link ShoppingListView}: a mensagem onde o botao estava nunca e fonte de
@@ -81,10 +82,12 @@ public class ReceiptView {
      * <code>Estornar</code> nao olha a janela; <code>voltar</code> devolve o
      * recibo.
      */
-    public ChatReply confirmation(ExpenseView expense, Locale locale) {
+    public ChatReply confirmation(ExpenseView expense, ResolvedContext context) {
+        Locale locale = context.locale();
         UUID transactionId = expense.transactionId();
+        List<String> closedItems = shopping.itemsClosedBy(context.householdId(), transactionId);
         return ChatReply.of(receipts.confirmReversal(locale, expense.occurredOn(), expense.categoryDisplayName(),
-                        expense.amountCents()),
+                        expense.amountCents(), expense.description(), closedItems),
                 List.of(List.of(
                         new ReplyAction(receipts.reverseButton(locale),
                                 ChatAction.onTransaction(ChatAction.Type.REVERSE, transactionId)),
@@ -92,29 +95,32 @@ public class ReceiptView {
                                 ChatAction.onTransaction(ChatAction.Type.BACK, transactionId)))));
     }
 
-    /** O lancamento que o botao acabou de estornar: o recibo de estorno, sem botao. */
+    /**
+     * O lancamento que este toque acabou de estornar: o recibo de estorno, sem
+     * botao (ADR-0041, item 2). Sem botao nenhum porque nao ha o que desfazer num
+     * lancamento estornado, e estorno nao tem refazer. O que voltou para a lista
+     * vai junto, como no recibo do <code>desfazer</code> digitado (ADR-0032).
+     */
     public ChatReply reversed(ReversedExpense reversed, ResolvedContext context) {
-        return reversed(reversed.transactionId(), reversed.categoryDisplayName(), reversed.amountCents(),
-                reversed.createdByMemberId(), context);
-    }
-
-    /** O lancamento que ja estava estornado, por qualquer caminho: redesenhado igual. */
-    public ChatReply reversed(ExpenseView expense, ResolvedContext context) {
-        return reversed(expense.transactionId(), expense.categoryDisplayName(), expense.amountCents(),
-                expense.createdByMemberId(), context);
+        String createdBy = members.nameOf(reversed.createdByMemberId()).orElse(null);
+        List<String> reopened = shopping.reopenedItemsOf(context.householdId(), reversed.transactionId());
+        return ChatReply.text(receipts.reversalReceipt(reversed.categoryDisplayName(), reversed.amountCents(),
+                createdBy, reopened, context));
     }
 
     /**
-     * Sem botao nenhum: nao ha o que desfazer num lancamento estornado, e estorno
-     * nao tem refazer. O que voltou para a lista vai junto, como no recibo do
-     * <code>desfazer</code> digitado (ADR-0032).
+     * O lancamento que ja estava estornado quando o botao foi tocado, por
+     * qualquer caminho: o estado estornado, sem botao, dizendo quando -- e por
+     * quem, se nao foi quem tocou.
      */
-    private ChatReply reversed(UUID transactionId, String categoryDisplayName, long amountCents,
-                               UUID createdByMemberId, ResolvedContext context) {
-        String createdBy = members.nameOf(createdByMemberId).orElse(null);
-        List<String> reopened = shopping.reopenedItemsOf(context.householdId(), transactionId);
-        return ChatReply.text(receipts.reversalReceipt(categoryDisplayName, amountCents, createdBy, reopened,
-                context));
+    public ChatReply alreadyReversed(ExpenseView expense, ResolvedContext context) {
+        String reversedBy = expense.reversedByMemberId() == null
+                || expense.reversedByMemberId().equals(context.memberId())
+                ? null
+                : members.nameOf(expense.reversedByMemberId()).orElse(null);
+        List<String> reopened = shopping.reopenedItemsOf(context.householdId(), expense.transactionId());
+        return ChatReply.text(receipts.reversedState(expense.reversedAt(), expense.categoryDisplayName(),
+                expense.amountCents(), reversedBy, reopened, context.locale()));
     }
 
     /**

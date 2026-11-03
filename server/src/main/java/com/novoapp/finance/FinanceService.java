@@ -125,13 +125,19 @@ public class FinanceService {
      * observador em <code>shopping</code>. Se ele falhar, o estorno cai junto,
      * que e o ponto.
      *
+     * <p>O alvo e lido sem trava. Se ele for estornado por outro caminho entre a
+     * leitura e a escrita -- o botao do recibo (ADR-0041), o outro telefone --, o
+     * carimbo condicional nao acontece e o resultado e vazio. Nao procura o
+     * proximo: quem digitou queria desfazer o que via como o mais recente, e esse
+     * ja foi desfeito.
+     *
      * @return vazio quando nao ha nada a estornar
      */
     @Transactional
     @HouseholdScoped
     public Optional<ReversedExpense> reverseLatest(UUID householdId, UUID memberId) {
         return transactions.findLatestNotReversed()
-                .map(transaction -> stampReversal(transaction, householdId, memberId));
+                .flatMap(transaction -> stampReversal(transaction, householdId, memberId));
     }
 
     /**
@@ -143,9 +149,10 @@ public class FinanceService {
      * nova la.
      *
      * <p>Le o lancamento com trava de escrita. Cada mensagem e processada na
-     * propria thread, entao dois toques no mesmo botao podem chegar juntos; sem a
-     * trava os dois veriam o lancamento de pe e os dois o estornariam. Com ela, o
-     * segundo espera o primeiro terminar e o encontra ja estornado.
+     * propria thread, entao dois toques no mesmo botao podem chegar juntos: o
+     * segundo espera o primeiro terminar e o encontra ja estornado. A trava so
+     * serializa quem tambem trava -- contra o <code>desfazer</code> digitado, que
+     * nao trava, quem protege e o carimbo condicional.
      *
      * @return vazio quando o lancamento nao existe neste household -- inclusive o
      *         de outro household, que a RLS esconde: o id vem do botao, e nao e
@@ -157,7 +164,7 @@ public class FinanceService {
     public Optional<ReversedExpense> reverse(UUID householdId, UUID memberId, UUID transactionId) {
         return Optional.ofNullable(transactions.findById(transactionId, LockModeType.PESSIMISTIC_WRITE))
                 .filter(transaction -> transaction.reversedAt == null)
-                .map(transaction -> stampReversal(transaction, householdId, memberId));
+                .flatMap(transaction -> stampReversal(transaction, householdId, memberId));
     }
 
     /**
@@ -201,17 +208,33 @@ public class FinanceService {
      * digitado (ADR-0025) e o do botao (ADR-0041). Marca <code>reversed_at</code>
      * em vez de apagar, e publica {@link ExpenseReversed} dentro da transacao de
      * quem chamou.
+     *
+     * <p><b>Um UPDATE condicional, e so nas duas colunas do estorno</b> -- nunca
+     * a linha inteira pelo estado da entidade. O desfazer digitado le o alvo sem
+     * trava; regravando a linha inteira, um estorno concorrente com a troca de
+     * categoria pelo botao devolveria a categoria antiga em silencio, e um
+     * concorrente com o desfazer pelo botao carimbaria duas vezes e anunciaria o
+     * estorno duas vezes. Quem decide se o estorno aconteceu e o banco, como na
+     * idempotencia da ADR-0005.
+     *
+     * @return vazio quando o lancamento ja estava estornado no momento da escrita
      */
-    private ReversedExpense stampReversal(Transaction transaction, UUID householdId, UUID memberId) {
-        transaction.reversedAt = Instant.now(clock);
-        transaction.reversedByMemberId = memberId;
-        transactions.flush();
+    private Optional<ReversedExpense> stampReversal(Transaction transaction, UUID householdId, UUID memberId) {
+        int stamped = transactions.update("reversedAt = ?1, reversedByMemberId = ?2 where id = ?3 and reversedAt is null",
+                Instant.now(clock), memberId, transaction.id);
+        if (stamped == 0) {
+            return Optional.empty();
+        }
 
         expenseReversed.fire(new ExpenseReversed(transaction.id, householdId));
 
+        // O UPDATE nao passou pela entidade: relida, ela traz a categoria que o
+        // lancamento tem agora, inclusive a que uma troca concorrente acabou de
+        // gravar -- e com essa que ele sai de cena (ADR-0041, item 5).
+        transactions.getEntityManager().refresh(transaction);
         Category category = categories.findById(transaction.categoryId);
-        return new ReversedExpense(transaction.id, transaction.amountCents,
-                category == null ? null : displayNameOf(category), transaction.createdByMemberId);
+        return Optional.of(new ReversedExpense(transaction.id, transaction.amountCents,
+                category == null ? null : displayNameOf(category), transaction.createdByMemberId));
     }
 
     private ExpenseView viewOf(Transaction transaction) {
@@ -219,7 +242,7 @@ public class FinanceService {
         return new ExpenseView(transaction.id, transaction.amountCents, transaction.categoryId,
                 category == null ? null : displayNameOf(category), transaction.description,
                 transaction.occurredOn, transaction.createdAt, transaction.createdByMemberId,
-                transaction.reversedAt != null);
+                transaction.reversedAt, transaction.reversedByMemberId);
     }
 
     /** Formato que a ADR-0026 fixou pro recibo quando a categoria tem pai. */

@@ -86,7 +86,7 @@ public class ReceiptActionHandler {
             return cannotAct(expense, context, reply);
         }
         if (outsideWindow(expense.get())) {
-            redraw(reply, view.confirmation(expense.get(), reply.locale()), null);
+            redraw(reply, view.confirmation(expense.get(), context), null);
             return interpreted();
         }
         return reverseAndRedraw("desfazer", transactionId, context, reply);
@@ -138,9 +138,9 @@ public class ReceiptActionHandler {
      */
     private ProcessingOutcome cannotAct(Optional<ExpenseView> expense, ResolvedContext context, Reply reply) {
         if (expense.isEmpty()) {
-            reply.send(ChatReply.text(null).withNotice(receipts.entryNotFound(reply.locale())));
+            reply.send(ChatReply.text(null).withNotice(receipts.entryNotFound(context)));
         } else {
-            redraw(reply, view.reversed(expense.get(), context), receipts.alreadyReversed(reply.locale()));
+            redraw(reply, view.alreadyReversed(expense.get(), context), receipts.alreadyReversed(reply.locale()));
         }
         return interpreted();
     }

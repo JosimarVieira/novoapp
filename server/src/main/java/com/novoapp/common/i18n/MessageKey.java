@@ -105,8 +105,12 @@ public enum MessageKey {
     RECEIPT_BUTTON_REVERSE("receipt.button.reverse"),
     RECEIPT_BUTTON_BACK("receipt.button.back"),
     RECEIPT_UNDO_CONFIRM("receipt.undo.confirm"),
+    RECEIPT_UNDO_CONFIRM_ITEMS("receipt.undo.confirm.items"),
+    RECEIPT_REVERSED_STATE("receipt.reversed.state"),
+    RECEIPT_REVERSED_STATE_BY("receipt.reversed.state.by"),
     RECEIPT_NOTICE_ALREADY_REVERSED("receipt.notice.already.reversed"),
     RECEIPT_NOTICE_NOT_FOUND("receipt.notice.not.found"),
+    RECEIPT_NOTICE_NOT_FOUND_HOUSEHOLD("receipt.notice.not.found.household"),
 
     // --------------------------------------------------------------- convite
     INVITE_ISSUED("invite.issued"),

@@ -19,8 +19,11 @@ import java.util.UUID;
  *        mostra
  * @param createdAt quando o lancamento foi gravado. E dai que a janela do
  *        desfazer pelo botao conta (decisao aberta #30), e nao da data do gasto
- * @param reversed estornado por qualquer caminho: botao, desfazer digitado ou,
- *        da Etapa 4 em diante, a web
+ * @param reversedAt nulo enquanto o lancamento esta de pe. Estornado por
+ *        qualquer caminho: botao, desfazer digitado ou, da Etapa 4 em diante, a
+ *        web
+ * @param reversedByMemberId quem estornou -- o recibo redesenhado diz, quando
+ *        nao foi quem tocou ("foi estornado por fulano", ADR-0012)
  */
 public record ExpenseView(UUID transactionId,
                           long amountCents,
@@ -30,5 +33,10 @@ public record ExpenseView(UUID transactionId,
                           LocalDate occurredOn,
                           Instant createdAt,
                           UUID createdByMemberId,
-                          boolean reversed) {
+                          Instant reversedAt,
+                          UUID reversedByMemberId) {
+
+    public boolean reversed() {
+        return reversedAt != null;
+    }
 }

@@ -199,8 +199,11 @@ public class AcoesNoReciboSteps {
     // ------------------------------------------------------------------
 
     /**
-     * O recibo de estorno do lancamento daquele recibo, no lugar dele, sem botao
-     * nenhum (ADR-0041, item 2): nao ha o que desfazer num lancamento estornado.
+     * O lancamento daquele recibo, estornado, no lugar dele e sem botao nenhum
+     * (ADR-0041, item 2): nao ha o que desfazer num lancamento estornado. Dois
+     * textos valem -- o recibo de estorno, quando foi este toque que estornou, e
+     * o estado estornado, quando ja estava --, e os dois nomeiam a categoria e o
+     * valor do lancamento do recibo, e nao de outro.
      */
     @E("^a mesma mensagem de \"([^\"]*)\" é atualizada como estornada, sem botões$")
     public void sameMessageShownAsReversed(String actor) {
@@ -208,8 +211,13 @@ public class AcoesNoReciboSteps {
         assertThat(message.hasActions()).as("recibo estornado nao tem botao").isFalse();
         Entry entry = entry(focus().transactionId());
         assertThat(entry.reversed()).as("o lancamento do recibo foi estornado").isTrue();
-        assertThat(message.text()).startsWith(Messages.get(Messages.DEFAULT, MessageKey.REVERSAL_RECEIPT,
-                entry.categoryName(), formatAmount(entry.amountCents())));
+        String reversedNow = Messages.get(Messages.DEFAULT, MessageKey.REVERSAL_RECEIPT,
+                entry.categoryName(), formatAmount(entry.amountCents()));
+        String alreadyReversed = Messages.get(Messages.DEFAULT, MessageKey.RECEIPT_REVERSED_STATE,
+                DAY.format(entry.reversedOn()), entry.categoryName(), formatAmount(entry.amountCents()));
+        assertThat(message.text()).satisfiesAnyOf(
+                text -> assertThat(text).startsWith(reversedNow),
+                text -> assertThat(text).startsWith(alreadyReversed));
     }
 
     @E("^\"([^\"]*)\" recebe um aviso curto de que o lançamento já foi estornado$")
@@ -338,18 +346,28 @@ public class AcoesNoReciboSteps {
         return buttons.stream().map(button -> button.action().type()).toList();
     }
 
-    private record Entry(long amountCents, String categoryName, LocalDate occurredOn, boolean reversed) {
+    /** @param reversedAt nulo enquanto o lancamento esta de pe */
+    private record Entry(long amountCents, String categoryName, LocalDate occurredOn, Instant reversedAt) {
+
+        boolean reversed() {
+            return reversedAt != null;
+        }
+
+        LocalDate reversedOn() {
+            return reversedAt.atZone(ZoneId.systemDefault()).toLocalDate();
+        }
     }
 
     private Entry entry(UUID transactionId) {
         List<List<Object>> rows = fixtures.query("""
-                SELECT t.amount_cents, c.name, t.occurred_on, t.reversed_at IS NOT NULL
+                SELECT t.amount_cents, c.name, t.occurred_on, t.reversed_at
                 FROM transaction t JOIN category c ON c.id = t.category_id
                 WHERE t.id = ?""", transactionId);
         assertThat(rows).hasSize(1);
         List<Object> row = rows.get(0);
+        Timestamp reversedAt = (Timestamp) row.get(3);
         return new Entry(((Number) row.get(0)).longValue(), (String) row.get(1),
-                ((Date) row.get(2)).toLocalDate(), (Boolean) row.get(3));
+                ((Date) row.get(2)).toLocalDate(), reversedAt == null ? null : reversedAt.toInstant());
     }
 
     private Set<UUID> transactionIds() {
