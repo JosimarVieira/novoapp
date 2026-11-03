@@ -12,6 +12,8 @@ import jakarta.enterprise.context.ApplicationScoped;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -67,11 +69,21 @@ public class ReceiptFormatter {
      * de aparecer pra quem tem uma familia so.
      */
     public String expenseReceipt(RegisteredExpense expense, ResolvedContext context) {
+        return expenseReceipt(expense.categoryDisplayName(), expense.amountCents(), expense.description(), context);
+    }
+
+    /**
+     * O mesmo recibo, montado a partir do lancamento como ele esta no banco: e o
+     * que os botoes do recibo redesenham (ADR-0041). Um caminho so para os dois
+     * e o que faz <code>voltar</code> devolver o recibo exatamente como estava.
+     */
+    public String expenseReceipt(String categoryDisplayName, long amountCents, String description,
+                                 ResolvedContext context) {
         Locale locale = context.locale();
         StringBuilder receipt = new StringBuilder(Messages.get(locale, MessageKey.EXPENSE_RECEIPT,
-                expense.categoryDisplayName(), formatAmount(expense.amountCents())));
-        if (expense.description() != null) {
-            receipt.append(Messages.get(locale, MessageKey.EXPENSE_RECEIPT_DESCRIPTION, expense.description()));
+                categoryDisplayName, formatAmount(amountCents)));
+        if (description != null) {
+            receipt.append(Messages.get(locale, MessageKey.EXPENSE_RECEIPT_DESCRIPTION, description));
         }
         if (context.multipleHouseholds()) {
             receipt.append(Messages.get(locale, MessageKey.RECEIPT_HOUSEHOLD, context.householdName()));
@@ -188,9 +200,20 @@ public class ReceiptFormatter {
      */
     public String reversalReceipt(ReversedExpense reversed, String createdByName,
                                   List<String> reopenedItems, ResolvedContext context) {
+        return reversalReceipt(reversed.categoryDisplayName(), reversed.amountCents(), createdByName,
+                reopenedItems, context);
+    }
+
+    /**
+     * O recibo de estorno pelas partes. E tambem o que o botao que acabou de
+     * estornar desenha no lugar do recibo (ADR-0041, item 2). Lancamento que ja
+     * estava estornado tem texto proprio, {@link #reversedState}.
+     */
+    public String reversalReceipt(String categoryDisplayName, long amountCents, String createdByName,
+                                  List<String> reopenedItems, ResolvedContext context) {
         Locale locale = context.locale();
         StringBuilder receipt = new StringBuilder(Messages.get(locale, MessageKey.REVERSAL_RECEIPT,
-                reversed.categoryDisplayName(), formatAmount(reversed.amountCents())));
+                categoryDisplayName, formatAmount(amountCents)));
         if (createdByName != null && !createdByName.equals(context.memberName())) {
             // Estorno cross-member e permitido (ADR-0012), mas nao pode ser
             // silencioso: quem desfez precisa ver que o lancamento era de outra
@@ -325,13 +348,23 @@ public class ReceiptFormatter {
      */
     public String checkoutReceipt(Locale locale, com.novoapp.shopping.CheckoutResult.Closed closed,
                                   List<ListItemView> stillPending) {
-        String amount = formatAmount(closed.amountCents());
-        StringBuilder receipt = new StringBuilder(closed.itemsPurchased() == 1
+        return checkoutReceipt(locale, closed.amountCents(), closed.categoryDisplayName(), closed.itemNames(),
+                stillPending);
+    }
+
+    /**
+     * O mesmo recibo pelas partes, para o redesenho a partir do banco (ADR-0041).
+     * O "ainda falta" e o de agora, e nao o do momento do fechamento: a lista e
+     * relida, como em todo redesenho -- a mensagem nunca e fonte de verdade.
+     */
+    public String checkoutReceipt(Locale locale, long amountCents, String categoryDisplayName,
+                                  List<String> itemNames, List<ListItemView> stillPending) {
+        String amount = formatAmount(amountCents);
+        StringBuilder receipt = new StringBuilder(itemNames.size() == 1
                 ? Messages.get(locale, MessageKey.CHECKOUT_RECEIPT_ONE,
-                        amount, closed.categoryDisplayName(), closed.itemNames().get(0))
+                        amount, categoryDisplayName, itemNames.get(0))
                 : Messages.get(locale, MessageKey.CHECKOUT_RECEIPT_MANY,
-                        amount, closed.categoryDisplayName(), closed.itemsPurchased(),
-                        bulleted(locale, closed.itemNames())));
+                        amount, categoryDisplayName, itemNames.size(), bulleted(locale, itemNames)));
         if (!stillPending.isEmpty()) {
             receipt.append(Messages.get(locale, MessageKey.CHECKOUT_RECEIPT_REMAINING,
                     bulleted(locale, stillPending.stream()
@@ -444,6 +477,117 @@ public class ReceiptFormatter {
 
     public String cartCheckoutWithoutCategory(Locale locale) {
         return Messages.get(locale, MessageKey.CART_CHECKOUT_NO_CATEGORY);
+    }
+
+    // ------------------------------------------------------------------
+    // Acoes no recibo (ADR-0041)
+    // ------------------------------------------------------------------
+
+    public String undoButton(Locale locale) {
+        return Messages.get(locale, MessageKey.RECEIPT_BUTTON_UNDO);
+    }
+
+    public String changeCategoryButton(Locale locale) {
+        return Messages.get(locale, MessageKey.RECEIPT_BUTTON_CHANGE_CATEGORY);
+    }
+
+    /** O nome da categoria; a atual vem marcada, como o que esta no carrinho. */
+    public String categoryButton(Locale locale, String categoryLabel, boolean current) {
+        return current
+                ? Messages.get(locale, MessageKey.RECEIPT_BUTTON_CATEGORY_CURRENT, categoryLabel)
+                : categoryLabel;
+    }
+
+    /**
+     * O teclado de troca substitui o recibo, entao diz de qual lancamento se
+     * trata: o valor e a categoria de agora.
+     */
+    public String askNewCategory(Locale locale, long amountCents, String categoryDisplayName) {
+        return Messages.get(locale, MessageKey.RECEIPT_CATEGORY_ASK, formatAmount(amountCents), categoryDisplayName);
+    }
+
+    public String categoryUnavailable(Locale locale) {
+        return Messages.get(locale, MessageKey.RECEIPT_NOTICE_CATEGORY_UNAVAILABLE);
+    }
+
+    public String reverseButton(Locale locale) {
+        return Messages.get(locale, MessageKey.RECEIPT_BUTTON_REVERSE);
+    }
+
+    public String backButton(Locale locale) {
+        return Messages.get(locale, MessageKey.RECEIPT_BUTTON_BACK);
+    }
+
+    /**
+     * Fora da janela do desfazer pelo botao (ADR-0041, item 3): a data, a
+     * categoria e o valor -- o que vai sumir --, antes do segundo toque. A data e
+     * a do lancamento, que e como a pessoa o reconhece; a janela conta de quando
+     * ele foi gravado, mas pelo chat as duas coincidem.
+     *
+     * <p>A confirmacao substitui o recibo, entao traz o que ele dizia e que
+     * identifica um lancamento antigo: a descricao, quando ha, e -- num
+     * fechamento -- os itens que voltam para a lista junto com o estorno
+     * (ADR-0032). Sem isso, tres itens voltariam a ficar pendentes sem que quem
+     * confirmou soubesse.
+     *
+     * @param closedItems vazio quando o lancamento nao veio de fechamento
+     */
+    public String confirmReversal(Locale locale, LocalDate occurredOn, String categoryDisplayName,
+                                  long amountCents, String description, List<String> closedItems) {
+        StringBuilder question = new StringBuilder(Messages.get(locale, MessageKey.RECEIPT_UNDO_CONFIRM,
+                DAY.format(occurredOn), categoryDisplayName, formatAmount(amountCents)));
+        if (description != null) {
+            question.append(Messages.get(locale, MessageKey.EXPENSE_RECEIPT_DESCRIPTION, description));
+        }
+        if (!closedItems.isEmpty()) {
+            question.append(Messages.get(locale, MessageKey.RECEIPT_UNDO_CONFIRM_ITEMS,
+                    bulleted(locale, closedItems)));
+        }
+        return question.toString();
+    }
+
+    /**
+     * O recibo de um lancamento que ja estava estornado quando o botao foi tocado
+     * (ADR-0041, item 7). Nao e o recibo de estorno: "Estornei" diria que este
+     * toque estornou, e quem estornou pode ter sido outra pessoa pelo
+     * <code>desfazer</code> digitado.
+     *
+     * @param reversedByName nulo quando quem estornou e quem esta lendo
+     * @param reopenedItems o que voltou para a lista, num fechamento
+     */
+    public String reversedState(Instant reversedAt, String categoryDisplayName, long amountCents,
+                                String reversedByName, List<String> reopenedItems, Locale locale) {
+        StringBuilder receipt = new StringBuilder(Messages.get(locale, MessageKey.RECEIPT_REVERSED_STATE,
+                DAY.format(reversedAt.atZone(ZoneId.systemDefault())), categoryDisplayName,
+                formatAmount(amountCents)));
+        if (reversedByName != null) {
+            receipt.append(Messages.get(locale, MessageKey.RECEIPT_REVERSED_STATE_BY, reversedByName));
+        }
+        receipt.append(Messages.get(locale, MessageKey.REVERSAL_RECEIPT_FOOTER));
+        if (!reopenedItems.isEmpty()) {
+            receipt.append(Messages.get(locale, MessageKey.CHECKOUT_REVERSAL_ITEMS, bulleted(locale, reopenedItems)));
+        }
+        return receipt.toString();
+    }
+
+    /**
+     * Botao de um recibo cujo lancamento ja foi estornado, por qualquer caminho:
+     * aviso, nao erro (ADR-0041, item 7).
+     */
+    public String alreadyReversed(Locale locale) {
+        return Messages.get(locale, MessageKey.RECEIPT_NOTICE_ALREADY_REVERSED);
+    }
+
+    /**
+     * Botao de um lancamento que nao existe no household ativo -- apagado por um
+     * script de limpeza, de um id que nao veio do bot, ou de outra familia de quem
+     * tem mais de uma. Nesse ultimo caso o aviso nomeia onde o bot procurou: e o
+     * que a ADR-0007 exige para erro de contexto ficar visivel.
+     */
+    public String entryNotFound(ResolvedContext context) {
+        return context.multipleHouseholds()
+                ? Messages.get(context.locale(), MessageKey.RECEIPT_NOTICE_NOT_FOUND_HOUSEHOLD, context.householdName())
+                : Messages.get(context.locale(), MessageKey.RECEIPT_NOTICE_NOT_FOUND);
     }
 
     // ------------------------------------------------------------------

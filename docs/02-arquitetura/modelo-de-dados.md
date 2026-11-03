@@ -1,7 +1,7 @@
 ---
 tipo: arquitetura
 status: escrito
-atualizado_em: 2026-10-29
+atualizado_em: 2026-11-03
 adrs:
   - ADR-0003
   - ADR-0005
@@ -610,7 +610,7 @@ domínio ainda não foi escrita.
 
 ## O que existe no banco hoje
 
-`server/src/main/resources/db/migration/`, dez migrations e um callback:
+`server/src/main/resources/db/migration/`, onze migrations e um callback:
 
 - **`V1__initial_schema.sql`** (Etapa 1): `household`, `member`,
   `household_membership`, `channel_identity`, `household_invite`,
@@ -654,6 +654,16 @@ domínio ainda não foi escrita.
 - **`V10__chat_cart_item.sql`** (2026-10-29): `chat_cart_item`, o Carrinho, com
   `household_id`, RLS ativa e `FORCE`, e `SELECT, INSERT, UPDATE, DELETE` para o
   papel de domínio — o padrão das tabelas novas da V3 e da V7, mais o `DELETE`.
+- **`V11__transaction_edit.sql`** (2026-11-03): `transaction_edit`, o histórico de
+  correção da [ADR-0012](../01-adr/0012-edicao-de-lancamento-entre-membros.md),
+  decidido em 2026-09-04 e criado agora porque a troca de categoria pelo recibo
+  ([ADR-0041](../01-adr/0041-botoes-de-desfazer-e-trocar-categoria-no-recibo.md))
+  é a primeira correção que o produto faz. `household_id`, RLS ativa e `FORCE`,
+  índice `(transaction_id, edited_at)`, e **só `SELECT` e `INSERT`** para o papel
+  de domínio: append-only, uma correção errada se corrige com outra linha.
+  `changed_fields_json` é `text`, como `intent_json`. A FK para `transaction` não
+  tem cascata, e por isso os scripts de reset apagam o histórico antes do
+  lançamento.
 
 Fora da numeração, `afterMigrate.sql` roda a **cada start**, mesmo sem migração
 pendente, e reconcilia a senha do papel `novoapp_runtime` com a variável de
@@ -681,10 +691,11 @@ migração `V5` faz o backfill e **aborta com a lista das linhas** se encontrar
 duplicata que só existia por causa do acento — resolver é manual, e é o preço de
 ter deixado o índice frouxo até aqui.
 
-As demais tabelas deste documento — `invoice`, `transaction_edit`,
-`financial_goal`, `goal_transaction_link`, `task` e `task_recurrence` — estão
-modeladas aqui e **não existem no schema**: entram na etapa que precisar delas.
-`list_checkout` saiu desta lista em 2026-09-21, com a `V7`.
+As demais tabelas deste documento — `invoice`, `financial_goal`,
+`goal_transaction_link`, `task` e `task_recurrence` — estão modeladas aqui e **não
+existem no schema**: entram na etapa que precisar delas. `list_checkout` saiu
+desta lista em 2026-09-21, com a `V7`, e `transaction_edit` em 2026-11-03, com a
+`V11`.
 `list_checkout` é o elo, Etapa 3; criá-la antes do comportamento que a usa
 deixaria schema morto no banco. O schema da Etapa 1 foi desenhado para não
 conflitar com nenhuma (`transaction` já carrega `invoice_id`, `installment_*` e

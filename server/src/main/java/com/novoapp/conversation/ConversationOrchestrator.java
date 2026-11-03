@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.novoapp.common.message.ChatReply;
 import com.novoapp.common.message.InboundMessage;
 import com.novoapp.conversation.action.ChatActionHandler;
+import com.novoapp.conversation.action.ReceiptView;
 import com.novoapp.conversation.action.ShoppingListView;
 import com.novoapp.conversation.cart.ChatCartService;
 import com.novoapp.conversation.ProcessingOutcome.Result;
@@ -107,6 +108,9 @@ public class ConversationOrchestrator {
 
     @Inject
     ShoppingListView listView;
+
+    @Inject
+    ReceiptView receiptView;
 
     @Inject
     ChatCartService cart;
@@ -590,7 +594,8 @@ public class ConversationOrchestrator {
 
         RegisteredExpense expense = finance.registerExpense(context.householdId(), context.memberId(),
                 category.id(), amountCents, description, sourceMessageId);
-        reply.send(receipts.expenseReceipt(expense, context));
+        // Com os botoes do recibo (ADR-0041), que agem sobre ESTE lancamento.
+        reply.send(receiptView.expense(expense, context));
         return executed(expenseIntentJson(expense));
     }
 
@@ -790,8 +795,9 @@ public class ConversationOrchestrator {
                 // pendente -- ou seja, nada.
                 cart.dropClosed(context);
                 // O que ainda falta vai no recibo: e a informacao que a pessoa
-                // precisa no mercado, com o celular na mao.
-                reply.send(receipts.checkoutReceipt(reply.locale(), closed,
+                // precisa no mercado, com o celular na mao. Os botoes do recibo
+                // (ADR-0041) agem sobre o lancamento deste fechamento.
+                reply.send(receiptView.checkout(reply.locale(), closed,
                         shopping.pendingItems(context.householdId())));
                 yield executed(json(Map.of("tool", "fecharCompra",
                         "itens", closed.itemNames(),

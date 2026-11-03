@@ -2,7 +2,7 @@
 tipo: sdd
 modulo: channel
 status: escrito
-atualizado_em: 2026-10-31
+atualizado_em: 2026-11-03
 adrs:
   - ADR-0002
   - ADR-0005
@@ -315,17 +315,32 @@ O contrato neutro mora fora daqui: `common.message.ChatAction`,
   verdade. É a verificação no bot de desenvolvimento que o ROADMAP pede a cada
   passo.
 
-## Botões no recibo (ADR-0041, aceita em 2026-10-31, ainda não implementado)
+## Botões no recibo (ADR-0041, aceita em 2026-10-31, implementada em 2026-11-03)
 
-O codec ganha os cinco tipos do recibo
-([ADR-0041](../01-adr/0041-botoes-de-desfazer-e-trocar-categoria-no-recibo.md)), e
-o maior deles leva duas referências: lançamento e categoria. Em forma textual,
-dois UUIDs somam 72 caracteres e não cabem nos 64 bytes do `callback_data`.
-Decidido: UUID em base64url, 22 caracteres — código, lançamento e categoria
-ficam em 48 bytes no maior caso. Só o `TelegramActionCodec` conhece esse
-formato; `ChatAction` continua recebendo `UUID`. Os códigos das ações da lista
-podem continuar em forma textual: o decodificador distingue pelo código, e
-botão já enviado continua válido.
+O codec ganhou os cinco tipos do recibo
+([ADR-0041](../01-adr/0041-botoes-de-desfazer-e-trocar-categoria-no-recibo.md)):
+`dz` (desfazer), `es` (estornar), `tr` (trocar), `vt` (voltar) e `ct`
+(categoria). O maior leva duas referências, lançamento e categoria; em forma
+textual seriam 76 bytes, acima dos 64 do `callback_data`. A referência de
+lançamento e a de categoria vão em base64url sem preenchimento, 22 caracteres:
+`ct:<lançamento>:<categoria>` fica em **48 bytes**, o maior botão que existe, e
+os de um lançamento só em 25. Só o `TelegramActionCodec` conhece esse formato;
+`ChatAction` continua recebendo `UUID`, agora numa referência tipada (item ou
+lançamento) e, na troca, com a categoria de destino.
+
+Os códigos da lista continuam em forma textual — há listas com botões no
+Telegram da família, e botão já enviado continua valendo. O decodificador
+distingue as duas formas pelo código, e só aceita a escrita canônica do
+base64url (reencoda e compara): base64 admite mais de uma escrita para os mesmos
+bytes, e aceitar só a canônica mantém "não casa, descarta" para dado forjado.
+
+`TelegramActionCodecTest` cobre a ida e volta de todos os dez tipos, o maior
+botão em 48 bytes, o botão de lista já enviado e a referência malformada.
+
+O estado "estornado" do recibo é uma edição sem teclado: `editMessageText` sem
+`reply_markup` tira os botões. O stub de aceitação substitui o adaptador inteiro,
+então isso só se confirma no Telegram de verdade `[a verificar no bot de
+desenvolvimento]`.
 
 ## Gatilhos de revisão
 

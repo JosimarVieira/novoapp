@@ -291,9 +291,13 @@ A ordem:
    isso o toque não chegava à aplicação, e nenhuma suíte tinha como pegar,
    porque o filtro mora na configuração do webhook. Ficaram de fora o toque
    duplo e o botão numa lista de mais de 48 horas.
-4. **Desfazer e trocar categoria pelo recibo**
+4. ~~**Desfazer e trocar categoria pelo recibo**~~ — **feito em 2026-11-03**,
+   com os 18 cenários verdes e a suíte no portão do CI
+   ([entrega](docs/05-entregas/acoes-no-recibo.md)). **Falta a verificação no
+   Telegram de verdade**, que o stub de aceitação não substitui — o roteiro está
+   na entrega.
    ([ADR-0041](docs/01-adr/0041-botoes-de-desfazer-e-trocar-categoria-no-recibo.md),
-   aceita em 2026-10-31) — é o próximo. O recibo de despesa e o de fechamento
+   aceita em 2026-10-31.) O recibo de despesa e o de fechamento
    ganham dois botões: desfazer, que estorna o lançamento **do próprio recibo**
    (e pede confirmação fora de uma janela provisória de 24 horas), e trocar
    categoria, por teclado e não por texto. Entra antes do item seguinte contra o
@@ -301,7 +305,7 @@ A ordem:
    corrige a categoria que o fechamento pelo carrinho já herda hoje sem
    perguntar, e o item seguinte muda *quando* um lançamento executa sozinho, não
    *quais* recibos registram dinheiro. Passos na seção própria, mais abaixo.
-5. **Inverter a autoridade da política de confiança** — depois do recibo. Guardas
+5. **Inverter a autoridade da política de confiança** — é o próximo. Guardas
    determinísticas sobre o payload decidem o que der para decidir, faixa como
    resíduo. O
    diagnóstico está fechado (o `confianca` do modelo aparece anticorrelacionado
@@ -424,7 +428,7 @@ como a ADR-0029 já prevê. O que foi decidido ao implementar, o que ficou de fo
 e a verificação manual, feita em 2026-10-31, estão na
 [entrega](docs/05-entregas/botoes-na-lista-de-compras.md).
 
-## Desfazer e trocar categoria pelo recibo (planejado em 2026-10-31)
+## Desfazer e trocar categoria pelo recibo (planejado em 2026-10-31, entregue em 2026-11-03)
 
 Não é etapa numerada, pelo mesmo motivo que os botões na lista não foram: não
 abre domínio novo. A decisão e as alternativas — inclusive a troca por texto e o
@@ -454,6 +458,14 @@ Dois passos, cada um com algo que dá para ver funcionando:
 Abre a [decisão aberta #30](docs/DECISOES-ABERTAS.md) (janela do desfazer pelo
 botão) e encerra a #29. A troca de **conta** pelo recibo, levantada no mesmo dia,
 ficou como [#31](docs/DECISOES-ABERTAS.md): hoje toda família tem uma conta só.
+
+**Entregue em 2026-11-03**, com o placar subindo como o plano dizia: 7 cenários
+verdes com o desfazer, 18 com a troca; a tag `em-construcao` saiu do runner e a
+suíte entrou no portão. Nenhuma ADR nova. O relato — o que foi construído, os
+achados da revisão do desenho (entre eles uma corrida entre o desfazer digitado e
+os botões, que pedia o carimbo do estorno condicional), as lacunas e o roteiro de
+verificação no Telegram — está em
+[`docs/05-entregas/acoes-no-recibo.md`](docs/05-entregas/acoes-no-recibo.md).
 
 ## Etapa 2b — Tarefas e agenda (~0,5 semana)
 

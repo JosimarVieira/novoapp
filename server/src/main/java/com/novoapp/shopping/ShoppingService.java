@@ -259,7 +259,8 @@ public class ShoppingService {
         return new CheckoutResult.Closed(closing.size(),
                 closing.stream().map(item -> item.name).toList(),
                 expense.amountCents(),
-                expense.categoryDisplayName());
+                expense.categoryDisplayName(),
+                expense.transactionId());
     }
 
     /**
@@ -380,6 +381,30 @@ public class ShoppingService {
     public List<String> reopenedItemsOf(UUID householdId, UUID transactionId) {
         return checkouts.findByTransaction(transactionId)
                 .map(checkout -> items.listPendingByCheckout(checkout.id).stream()
+                        .map(item -> item.name)
+                        .toList())
+                .orElseGet(List::of);
+    }
+
+    /**
+     * Os itens que o fechamento deste lancamento baixou da lista -- leitura, para
+     * o recibo de fechamento redesenhado pelos botoes do recibo (ADR-0041).
+     *
+     * <p>Existe pelo mesmo motivo de {@link #reopenedItemsOf}: o recibo do elo diz
+     * os itens <b>e</b> o dinheiro, e um redesenho a partir do banco que so
+     * soubesse do dinheiro esconderia metade do efeito. Nao e caminho de escrita:
+     * o estorno do fechamento continua sendo o observador de
+     * {@code ExpenseReversed} (ADR-0032).
+     *
+     * @return vazio quando o lancamento nao veio de fechamento -- o caso comum --
+     *         ou quando os itens ja voltaram para a lista, o que so acontece
+     *         depois do estorno
+     */
+    @Transactional
+    @HouseholdScoped
+    public List<String> itemsClosedBy(UUID householdId, UUID transactionId) {
+        return checkouts.findByTransaction(transactionId)
+                .map(checkout -> items.listPurchasedByCheckout(checkout.id).stream()
                         .map(item -> item.name)
                         .toList())
                 .orElseGet(List::of);

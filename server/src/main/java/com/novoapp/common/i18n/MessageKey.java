@@ -100,6 +100,22 @@ public enum MessageKey {
     CART_CHECKOUT_CATEGORY_ASK("cart.checkout.category.ask"),
     CART_CHECKOUT_NO_CATEGORY("cart.checkout.no.category"),
 
+    // ----------------------------------------- acoes no recibo (ADR-0041)
+    RECEIPT_BUTTON_UNDO("receipt.button.undo"),
+    RECEIPT_BUTTON_CHANGE_CATEGORY("receipt.button.change.category"),
+    RECEIPT_BUTTON_REVERSE("receipt.button.reverse"),
+    RECEIPT_BUTTON_BACK("receipt.button.back"),
+    RECEIPT_BUTTON_CATEGORY_CURRENT("receipt.button.category.current"),
+    RECEIPT_CATEGORY_ASK("receipt.category.ask"),
+    RECEIPT_NOTICE_CATEGORY_UNAVAILABLE("receipt.notice.category.unavailable"),
+    RECEIPT_UNDO_CONFIRM("receipt.undo.confirm"),
+    RECEIPT_UNDO_CONFIRM_ITEMS("receipt.undo.confirm.items"),
+    RECEIPT_REVERSED_STATE("receipt.reversed.state"),
+    RECEIPT_REVERSED_STATE_BY("receipt.reversed.state.by"),
+    RECEIPT_NOTICE_ALREADY_REVERSED("receipt.notice.already.reversed"),
+    RECEIPT_NOTICE_NOT_FOUND("receipt.notice.not.found"),
+    RECEIPT_NOTICE_NOT_FOUND_HOUSEHOLD("receipt.notice.not.found.household"),
+
     // --------------------------------------------------------------- convite
     INVITE_ISSUED("invite.issued"),
     INVITE_NOT_OWNER("invite.not.owner"),

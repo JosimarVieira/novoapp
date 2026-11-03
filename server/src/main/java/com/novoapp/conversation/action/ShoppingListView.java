@@ -61,16 +61,16 @@ public class ShoppingListView {
             boolean carted = inCart.contains(item.id());
             // O botao carrega o estado de destino, nunca "alternar" (ADR-0040,
             // item 6): o que esta no carrinho oferece tirar, e vice-versa.
-            ChatAction cart = new ChatAction(carted ? ChatAction.Type.REMOVE_FROM_CART : ChatAction.Type.ADD_TO_CART,
+            ChatAction cart = ChatAction.onItem(carted ? ChatAction.Type.REMOVE_FROM_CART : ChatAction.Type.ADD_TO_CART,
                     item.id());
             rows.add(List.of(
                     new ReplyAction(receipts.cartButton(locale, item.name(), carted), cart),
                     new ReplyAction(receipts.removeButton(locale),
-                            new ChatAction(ChatAction.Type.REMOVE_ITEM, item.id()))));
+                            ChatAction.onItem(ChatAction.Type.REMOVE_ITEM, item.id()))));
         }
         if (restorable != null) {
             rows.add(List.of(new ReplyAction(receipts.restoreButton(locale, restorable.name()),
-                    new ChatAction(ChatAction.Type.RESTORE_ITEM, restorable.id()))));
+                    ChatAction.onItem(ChatAction.Type.RESTORE_ITEM, restorable.id()))));
         }
         if (!inCart.isEmpty()) {
             rows.add(List.of(new ReplyAction(receipts.closeCartButton(locale, inCart.size()),

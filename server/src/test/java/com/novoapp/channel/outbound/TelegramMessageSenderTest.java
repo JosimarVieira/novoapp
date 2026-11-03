@@ -100,7 +100,7 @@ class TelegramMessageSenderTest {
 
     private ChatReply list() {
         return ChatReply.of("Esta faltando:\n- Cafe",
-                List.of(List.of(new ReplyAction("Cafe", new ChatAction(ChatAction.Type.ADD_TO_CART, ITEM)))));
+                List.of(List.of(new ReplyAction("Cafe", ChatAction.onItem(ChatAction.Type.ADD_TO_CART, ITEM)))));
     }
 
     private static final class FakeTelegramApi implements TelegramApi {

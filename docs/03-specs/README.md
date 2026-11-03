@@ -55,8 +55,9 @@ entrou no portão do CI em 2026-10-29, com os 15 cenários verdes.
 [ADR-0041](../01-adr/0041-botoes-de-desfazer-e-trocar-categoria-no-recibo.md),
 aceita no mesmo dia. Pelo mesmo motivo da anterior, não é etapa e tem arquivo
 próprio: `@acoes-no-chat` já está no portão do CI. Roda em
-`AcoesNoReciboAcceptanceTest`, que nasceu desabilitado e perde o `@Disabled` no
-primeiro passo de código.
+`AcoesNoReciboAcceptanceTest`, que nasceu desabilitado, passou pela tag
+`em-construcao` enquanto o código era escrito e entrou no portão do CI em
+2026-11-03, com os 18 cenários verdes.
 
 `@saneamento` é a quarta tag, e não é etapa. Marca cenário nascido de auditoria
 ou de uso real depois de a etapa dele já estar fechada

@@ -111,6 +111,15 @@ public class StubOutboundMessagePort implements OutboundMessagePort {
                 .toList();
     }
 
+    /**
+     * Uma mensagem como esta agora, depois das substituicoes -- o recibo onde a
+     * pessoa vai tocar, que pode ja nao ser a mensagem mais recente do fio
+     * (ADR-0041).
+     */
+    public Optional<Sent> current(long messageId) {
+        return Optional.ofNullable(current.get(messageId));
+    }
+
     public List<ClickAnswer> clickAnswersTo(String externalId) {
         return answers.stream().filter(answer -> answer.externalId().equals(externalId)).toList();
     }

@@ -113,6 +113,27 @@ public class AcceptanceWorld {
     List<String> numberedOptions;
     String chosenOption;
 
+    /**
+     * Um recibo de lancamento que a pessoa recebeu (ADR-0041): a mensagem onde ele
+     * esta, o lancamento dele e o texto com que chegou -- e esse texto que
+     * <code>voltar</code> tem de devolver.
+     */
+    record Receipt(long messageId, UUID transactionId, String text, String categoryName) {
+    }
+
+    /** Os recibos pela frase que os gerou: "o recibo de farmácia 30". */
+    final Map<String, Receipt> receipts = new LinkedHashMap<>();
+
+    /** O recibo de que o cenario esta falando: o ultimo recebido ou tocado. */
+    Receipt receiptInFocus;
+
+    /**
+     * Os lancamentos como estavam quando o ultimo recibo chegou: e contra isso que
+     * "nenhum lancamento e alterado" e "nenhum lancamento novo e criado" conferem
+     * o que o toque fez.
+     */
+    List<List<Object>> transactionsAtLastReceipt = List.of();
+
     void reset() {
         fixtures.truncateAll();
         outbound.clear();
@@ -135,6 +156,9 @@ public class AcceptanceWorld {
         plantedCheckouts.clear();
         numberedOptions = null;
         chosenOption = null;
+        receipts.clear();
+        receiptInFocus = null;
+        transactionsAtLastReceipt = List.of();
     }
 
     String externalIdFor(String actor) {

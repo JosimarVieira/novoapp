@@ -1,6 +1,7 @@
 package com.novoapp.shopping;
 
 import java.util.List;
+import java.util.UUID;
 
 /**
  * O desfecho de <code>fecharCompra</code>, selado: o modulo nao lanca excecao
@@ -19,11 +20,16 @@ public sealed interface CheckoutResult {
      * duas coisas: a alternativa seria <code>conversation</code> consultar
      * <code>finance</code> de novo depois, reintroduzindo a segunda transacao
      * para efeito de leitura.
+     *
+     * @param transactionId o lancamento que o fechamento gerou. O recibo precisa
+     *        dele desde a ADR-0041: os botoes do recibo agem sobre o lancamento
+     *        <b>daquele</b> recibo, e nao sobre o mais recente do household
      */
     record Closed(int itemsPurchased,
                   List<String> itemNames,
                   long amountCents,
-                  String categoryDisplayName) implements CheckoutResult {
+                  String categoryDisplayName,
+                  UUID transactionId) implements CheckoutResult {
     }
 
     /**

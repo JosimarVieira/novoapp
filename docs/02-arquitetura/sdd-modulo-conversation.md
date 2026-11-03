@@ -2,7 +2,7 @@
 tipo: sdd
 modulo: conversation
 status: escrito
-atualizado_em: 2026-10-31
+atualizado_em: 2026-11-03
 adrs:
   - ADR-0004
   - ADR-0015
@@ -584,30 +584,105 @@ conversation/
 parâmetro, e se o hash tivesse mudado, algo de botão teria vazado para o
 prompt.
 
-## Botões no recibo (ADR-0041, aceita em 2026-10-31, ainda não implementado)
+## Botões no recibo (ADR-0041, aceita em 2026-10-31, implementada em 2026-11-03)
 
 Desenho da [ADR-0041](../01-adr/0041-botoes-de-desfazer-e-trocar-categoria-no-recibo.md);
-comportamento em `financas-acoes-no-recibo.feature`, tag `@acoes-no-recibo`.
+comportamento em `financas-acoes-no-recibo.feature`, tag `@acoes-no-recibo`,
+18 cenários verdes no portão.
 
-- **Onde entra no fluxo**: no mesmo passo 0 das ações da lista — o
-  `ChatActionHandler`, antes da busca por pendência. O desfazer pelo botão não
-  toca a pendência aberta, ao contrário do `desfazer` digitado.
-- **Tipos novos**: `desfazer` e `estornar` (com o lançamento), `trocar` e
-  `voltar` (com o lançamento, só redesenham), `categoria` (com o lançamento e a
-  categoria de destino).
-- **Janela**: `novoapp.conversation.receipt.undo-window`, 24 horas, provisória
-  ([decisão aberta #30](../DECISOES-ABERTAS.md)) — config, nunca constante, como
-  o TTL da pendência e o do carrinho. Lida no toque, contra o `created_at` do
-  lançamento; `estornar` não a consulta.
-- **Estados da mensagem de recibo**: recibo (dois botões), teclado de
-  categorias, confirmação, estornado (sem botões). Todo toque redesenha a partir
-  do banco; lançamento já estornado responde com aviso e o estado estornado.
-- **Quais recibos**: o de despesa (`registerExpense`, por qualquer caminho) e o
-  de fechamento (texto ou carrinho). O recibo precisa conhecer o id do
-  lançamento, que `RegisteredExpense` e o resultado do `checkout` já devolvem
-  `[a verificar ao implementar, no lado do fechamento]`.
-- **O teclado de categorias** é a mesma lista da pergunta do primeiro
-  fechamento (`listExpenseCategories`), com a atual marcada.
+### Onde entra no fluxo
+
+No mesmo passo 0 das ações da lista: `ChatActionHandler` despacha os cinco tipos
+do recibo para `ReceiptActionHandler`, antes da busca por pendência. **Nenhum
+deles fala com `PendingActionService`** — o desfazer pelo botão não cancela a
+pergunta aberta, ao contrário do `desfazer` digitado (ADR-0041, item 8), e
+diferente do `fechar`, que supera a pergunta.
+
+### Os cinco tipos
+
+| Tipo | Ação | Escreve? |
+|---|---|---|
+| `desfazer` | dentro da janela, estorna o lançamento do recibo; fora, redesenha a confirmação | só dentro da janela |
+| `estornar` | estorna sem olhar a janela (o segundo toque da confirmação) | sim |
+| `trocar` | redesenha o teclado de categorias | não |
+| `voltar` | redesenha o recibo como o lançamento está agora | não |
+| `categoria` | troca a categoria, com histórico (ADR-0012), e redesenha o recibo | só quando a categoria muda |
+
+O tratador **nunca chama `reverseLatest`**: o alvo é o lançamento que o botão
+carrega (`finance.reverse`). Todo toque relê o lançamento antes de agir.
+
+### Os estados da mensagem de recibo
+
+`ReceiptView` monta todos, irmão de `ShoppingListView`, e é também quem monta os
+dois recibos de lançamento que o orquestrador envia (`registerOrAskAmount` e
+`checkout`, que cobre o texto e o carrinho).
+
+- **Recibo**: o texto de sempre, com a dica "Se eu errei, responda: desfazer", e
+  uma linha `[↩ Desfazer] [Trocar categoria]`.
+- **Teclado**: "Para qual categoria vai R$ 30,00, que está em Farmácia?", as
+  categorias de `listExpenseCategories` (o nome de exibição, com o pai quando
+  há), duas por linha, a atual marcada com `✅`, e `[Voltar]` na última linha.
+- **Confirmação** (fora da janela): a data do lançamento, a categoria e o valor,
+  com `[Estornar] [Voltar]`.
+- **Estornado**, sem botão nenhum, em dois textos: o recibo de estorno
+  ("Estornei: …") quando foi **este** toque que estornou, e o estado estornado
+  ("Estornado em 31/10/2026: …", e ", por Ana" quando quem estornou não é quem
+  tocou) quando o lançamento já estava estornado. Os dois trazem "Voltaram para a
+  lista" num fechamento.
+
+### Janela
+
+`novoapp.conversation.receipt.undo-window`, `Duration`, `PT24H` em
+`application.properties` — provisória, [decisão aberta #30](../DECISOES-ABERTAS.md),
+no mesmo molde de `novoapp.conversation.cart.ttl`. Lida a cada toque e comparada
+com o `created_at` do lançamento pelo `Clock` injetado; o botão não carrega prazo.
+Para ver a confirmação no bot de desenvolvimento:
+`NOVOAPP_CONVERSATION_RECEIPT_UNDO_WINDOW=PT2M`.
+
+### Decisões tomadas ao implementar (2026-11-03)
+
+Nenhuma contradiz ADR aceita.
+
+- **O redesenho do recibo de fechamento traz os itens**, lidos em `shopping`
+  (`itemsClosedBy`). "Voltar redesenha o recibo como estava" (item 3) não teria
+  como valer para o fechamento a partir do banco sem eles, e um recibo do elo que
+  só falasse do dinheiro esconderia metade do efeito.
+- **O "Ainda falta" do recibo de fechamento redesenhado é o de agora**, e não o
+  do momento do fechamento: é relido, como em todo redesenho, e o texto está no
+  presente. É o único ponto em que o redesenho não é o recibo "como estava" —
+  para a despesa, o texto volta idêntico (e o cenário de `voltar` confere isso).
+- **"Já estornado" tem texto próprio**, e não o "Estornei" do recibo de estorno.
+  Achado da revisão do desenho: com o mesmo texto, o fio de quem digitou
+  `desfazer` e depois tocou no botão terminava com duas mensagens idênticas, e o
+  estorno feito pelo outro telefone aparecia como se tivesse sido este toque —
+  contra "foi estornado por fulano" (ADR-0012). `ExpenseView` passou a carregar
+  quando e por quem.
+- **A confirmação ecoa a descrição e, num fechamento, os itens que voltam para a
+  lista.** Ela substitui o recibo, e "vendo o que vai sumir" (item 3) inclui os
+  itens que o estorno devolve (ADR-0032).
+- **Lançamento não encontrado** — apagado pelo script de reset, de id forjado, ou
+  de outra família de quem tem mais de uma — é o **único toque que não
+  redesenha**: só o aviso, e a mensagem fica como está, porque não há o que
+  desenhar no lugar dela. Para quem tem mais de uma família, o aviso nomeia onde
+  o bot procurou (ADR-0007).
+- **Categoria que saiu do teclado** desde que ele foi desenhado (de outro
+  household, de receita, arquivada) vira aviso curto e o teclado de agora, e não
+  recibo de erro: o teclado fica no chat para sempre.
+- **O registro do clique** para a Etapa 5 é `{"acao": "desfazer"|"estornar"|"categoria",
+  "transaction_id": …}`, com a categoria nova na troca — a mesma chave
+  `transaction_id` do `desfazer` digitado. Redesenho sem escrita sai `INTERPRETED`.
+
+`prompt_version` não mudou: `staticFingerprint()` deu `5eb5b298b145` antes e
+depois.
+
+### Estrutura
+
+```
+conversation/action/
+  ChatActionHandler     -- os dez tipos; os cinco do recibo vao para:
+  ReceiptActionHandler  -- desfazer, estornar, trocar, voltar, categoria
+  ReceiptView           -- recibo, teclado, confirmacao, estornado
+```
 
 ## Gatilhos de revisão
 

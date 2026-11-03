@@ -16,7 +16,8 @@
 --        psql "$ADMIN_URL" -v household=<uuid> -v apply=1 -f reset-household-for-family-launch.sql
 --
 -- O QUE APAGA (so do household informado):
---   pending_action, list_item, list_checkout, shopping_list, transaction, category.
+--   pending_action, list_item, list_checkout, shopping_list, transaction_edit,
+--   transaction, category.
 --   chat_cart_item sai junto, pela cascata da FK para list_item (V10), sem
 --   DELETE proprio.
 --
@@ -111,6 +112,7 @@ INSERT INTO seed_category (parent, name) VALUES
 \echo ''
 \echo 'Antes:'
 SELECT 'transaction'    AS tabela, count(*) FROM transaction    WHERE household_id = current_setting('reset.household_id')::uuid
+UNION ALL SELECT 'transaction_edit', count(*) FROM transaction_edit WHERE household_id = current_setting('reset.household_id')::uuid
 UNION ALL SELECT 'category',       count(*) FROM category       WHERE household_id = current_setting('reset.household_id')::uuid
 UNION ALL SELECT 'shopping_list',  count(*) FROM shopping_list  WHERE household_id = current_setting('reset.household_id')::uuid
 UNION ALL SELECT 'list_item',      count(*) FROM list_item      WHERE household_id = current_setting('reset.household_id')::uuid
@@ -168,11 +170,15 @@ BEGIN
 
     -- Ordem de apagar segue as FKs: quem aponta sai antes de quem e apontado.
     --   list_item -> list_checkout -> transaction -> category
+    --   transaction_edit -> transaction (V11, ADR-0041)
     --   list_item -> shopping_list
     DELETE FROM pending_action WHERE household_id = target;
     DELETE FROM list_item      WHERE household_id = target;
     DELETE FROM list_checkout  WHERE household_id = target;
     DELETE FROM shopping_list  WHERE household_id = target;
+    -- O historico de edicao aponta para o lancamento e nao tem cascata: e
+    -- append-only, e so sai junto com o household inteiro.
+    DELETE FROM transaction_edit WHERE household_id = target;
     -- Num comando so: o estorno aponta para o lancamento original
     -- (reversal_of_id), e o Postgres confere a FK no fim do comando, com os dois
     -- ja apagados.

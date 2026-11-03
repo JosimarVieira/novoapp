@@ -2,7 +2,7 @@
 tipo: sdd
 modulo: finance
 status: escrito
-atualizado_em: 2026-10-31
+atualizado_em: 2026-11-03
 adrs:
   - ADR-0010
   - ADR-0011
@@ -210,27 +210,59 @@ O risco desta escolha está declarado no
 [SDD de `shopping`](sdd-modulo-shopping.md): observador de evento não é um
 `import`, então o ArchUnit não vê o acoplamento. A disciplina é humana.
 
-## Estorno determinado e troca de categoria (ADR-0041, aceita em 2026-10-31, ainda não implementado)
+## Estorno determinado e troca de categoria (ADR-0041, aceita em 2026-10-31, implementada em 2026-11-03)
 
-Duas operações novas, chamadas pelos botões do recibo
+Duas operações novas e uma leitura, chamadas pelos botões do recibo
 ([ADR-0041](../01-adr/0041-botoes-de-desfazer-e-trocar-categoria-no-recibo.md)):
 
-- **Estornar um lançamento determinado.** Irmã de `reverseLatest`: mesmo
-  carimbo (`reversed_at`, `reversed_by_member_id`) e o mesmo `ExpenseReversed`
-  dentro da transação, de modo que o fechamento reabre pelo observador que já
-  existe em `shopping` (ADR-0032) — sem linha nova lá. Lançamento já estornado
-  não é erro: devolve vazio, e `conversation` redesenha o recibo como estornado.
-- **Trocar a categoria.** Só para categoria de despesa do household, e nunca em
-  lançamento estornado. Grava uma linha em `transaction_edit`
-  ([ADR-0012](../01-adr/0012-edicao-de-lancamento-entre-membros.md)), com
-  `changed_fields_json` no formato `{"category_id": [de, para]}`; trocar para a
-  categoria atual não grava nada. A tabela nasce aqui, numa migration nova, com
-  `household_id` e RLS — até hoje nenhuma correção existia, e ela nunca foi
-  criada.
+- **`reverse(householdId, memberId, transactionId)`** — estorna um lançamento
+  determinado. Irmã de `reverseLatest`, e não cópia: as duas usam o mesmo miolo
+  (`stampReversal`), com o mesmo carimbo e o mesmo `ExpenseReversed` dentro da
+  transação, de modo que o fechamento reabre pelo observador que já existe em
+  `shopping` (ADR-0032) — sem linha nova lá. Lê o lançamento com trava de
+  escrita. Lançamento já estornado, ou que não existe neste household, devolve
+  vazio, e `conversation` redesenha o recibo.
+- **`changeCategory(householdId, memberId, transactionId, categoryId)`** — devolve
+  o desfecho selado `CategoryChange`: `Changed`, `Unchanged` (já estava nessa
+  categoria: nada é gravado), `AlreadyReversed`, `NotFound` e
+  `CategoryUnavailable` (de outro household, de receita ou arquivada). Lê e trava
+  o lançamento **antes** de olhar a categoria, para que lançamento inexistente ou
+  estornado decida o desfecho. Grava uma linha em `transaction_edit`
+  ([ADR-0012](../01-adr/0012-edicao-de-lancamento-entre-membros.md)) com
+  `changed_fields_json` no formato `{"category_id": ["<de>", "<para>"]}`, e dá
+  `flush` dentro do escopo, como `registerExpense`.
+- **`expense(transactionId)`** — a leitura `ExpenseView` que o recibo precisa
+  para ser redesenhado a partir do banco: id, valor, categoria, descrição, data,
+  `created_at`, quem lançou, e quando e por quem foi estornado.
 
 Como `lastCheckoutCategory` lê a categoria atual do lançamento, a troca num
-fechamento muda a categoria do próximo fechamento pelo botão. É intencional
-(ADR-0041, item 6).
+fechamento muda a categoria do próximo fechamento pelo botão — sem código para
+isso, como a ADR previa (item 6), e com cenário.
+
+### Todo escritor de `transaction` trava ou escreve condicionalmente (2026-11-03)
+
+Achado da revisão do desenho, antes do código da troca. O `desfazer` digitado lê
+o alvo sem trava, e o Hibernate regrava a linha inteira pelo estado da entidade:
+um estorno digitado concorrente com a troca pelo botão esperava a trava da troca
+e depois gravava a categoria **antiga** por cima — o lançamento saía de cena na
+categoria errada, contra o histórico e contra o recibo que a pessoa viu
+(ADR-0041, item 5). Concorrente com o desfazer pelo botão, carimbava duas vezes e
+anunciava o estorno duas vezes.
+
+Por isso o carimbo do estorno é um `UPDATE` condicional só nas duas colunas do
+estorno (`... where id = ? and reversed_at is null`), e o evento só sai se uma
+linha mudou: quem decide se o estorno aconteceu é o banco, como na idempotência
+da ADR-0005. `reverseLatest` cujo alvo foi estornado no meio devolve vazio e não
+procura o próximo. `ReversalConcurrencyTest` cobre os três pares com duas
+threads, conferindo que a segunda escrita de fato esperou; com o carimbo antigo,
+o par do `desfazer` digitado fica vermelho.
+
+### O que a FK não segura
+
+Checagem de FK ignora RLS. `transaction.category_id` aceitaria, no banco, a
+categoria de outro household; quem segura é a leitura sob RLS em
+`changeCategory`, e o `TenantIsolationTest` cobre os ids que vêm do botão — de
+lançamento e de categoria.
 
 ## Gatilhos de revisão
 
@@ -239,9 +271,11 @@ fechamento muda a categoria do próximo fechamento pelo botão. É intencional
   dois começam a ser `shopping` reagindo a `finance` de modo geral, e nenhuma
   regra de arquitetura pega isso.
 - **Edição de campo com histórico** ([ADR-0012](../01-adr/0012-edicao-de-lancamento-entre-membros.md),
-  tabela `transaction_edit`) continua fora: a Etapa 2a implementou o estorno, que
-  é o outro mecanismo da mesma ADR, mas nenhum cenário desta etapa corrige valor
-  ou categoria de um lançamento já gravado. Entra com a tela de correção, Etapa 4.
+  tabela `transaction_edit`) existe desde 2026-11-03 para um campo só, a
+  categoria, trocada pelo recibo (ADR-0041). Valor e descrição entram com a tela
+  de correção da Etapa 4; quando entrarem, `changed_fields_json` passa a ter mais
+  de uma chave, e é aqui que a coerência do diff precisa de teste (ADR-0012,
+  consequências).
 - **Etapa 5**: a ADR-0025 não fixou janela de tempo para o `desfazer`. Se
   estornar um lançamento de dias atrás surpreender na prática, é aqui que a
   janela entra.
